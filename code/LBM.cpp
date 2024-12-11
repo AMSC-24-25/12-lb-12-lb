@@ -2,8 +2,9 @@
 #include <vector>
 #include <array>
 
-// Helper macro for 1D indexing from 2D coordinates
+// Helper macro for 1D indexing from 2D or 3D coordinates
 #define INDEX(x, y, NX) ((x) + (NX) * (y)) // Convert 2D indices (x, y) into 1D index
+#define INDEX3D(x, y, i, NX, ndirections) ((i) + (ndirections) * ((x) + (NX) * (y)))
 
 int main() {
     const unsigned int NSTEPS = 10;       // Number of timesteps to simulate
@@ -48,11 +49,28 @@ int main() {
     std::vector<std::pair<double, double>> u(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
     std::vector<double> f_eq(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
 
+    //Print the density for debugging purposes
+    std::cout << "Density:\n";
+    for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int y = 0; y < NY; ++y) {
+            std::cout << std::fixed << rho[INDEX(x, y, NX)] << " ";
+        }
+        std::cout << "\n";
+    }
+
     // Apply boundary condition: set velocity at the top lid (moving lid)
     for (unsigned int x = 0; x < NX; ++x) {
         unsigned int y = NY - 1; // Top boundary index
         u[INDEX(x, y, NX)].first = u_lid; // Set horizontal velocity to u_lid
         u[INDEX(x, y, NX)].second = 0.0;  // Vertical velocity is 0 at the top lid
+    }
+    //Print the velocity for debugging purposes
+    std::cout << "Velocity:\n";
+    for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int y = 0; y < NY; ++y) {
+            std::cout << "(" << u[INDEX(x, y, NX)].first << ", " << u[INDEX(x, y, NX)].second << ") ";
+        }
+        std::cout << "\n";
     }
 
     // Compute the equilibrium distribution function f_eq
@@ -66,11 +84,10 @@ int main() {
             for (unsigned int i = 0; i < ndirections; ++i) {
                 double cx = direction[i].first; // x-component of direction vector
                 double cy = direction[i].second; // y-component of direction vector
-                double cu = 3.0 * (cx * ux + cy * uy); // Dot product (c_i · u)
+                double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
 
                 // Compute f_eq using the BGK collision formula
-                f_eq[i + ndirections * idx] = weight[i] * rho[idx] *
-                                              (1.0 + cu + 0.5 * cu * cu - 1.5 * u2);
+                f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
             }
         }
     }
@@ -82,11 +99,50 @@ int main() {
             size_t idx = INDEX(x, y, NX);
             std::cout << "Point (" << x << ", " << y << "): ";
             for (unsigned int i = 0; i < ndirections; ++i) {
-                std::cout << f_eq[i + ndirections * idx] << " ";
+                std::cout << f_eq[INDEX3D(x, y, i, NX, ndirections)] << " ";
             }
             std::cout << "\n";
         }
     }
+    //The following function are unusful in the case of equilibrium, however are useful after when they give different results
+    //Calculate the density and velocity
+    std::vector<std::pair<double, double>> u_new(NX * NY, {0.0, 0.0});
+    std::vector<double> rho_new(NX * NY, 0);
+    for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int y = 0; y < NY; ++y) {
+            size_t idx = INDEX(x, y, NX);
+            for (unsigned int i = 0; i < ndirections; ++i) {
+                double fi = f_eq[INDEX3D(x, y, i, NX, ndirections)];
+                rho_new[idx] += fi;
+                u_new[idx].first += fi * direction[i].first;
+                u_new[idx].second += fi * direction[i].second;
+            }
+
+            if (rho_new[idx] > 1e-10) {
+                u_new[idx].first /= rho_new[idx];
+                u_new[idx].second /= rho_new[idx];
+            }
+        }
+    }
+    //Print the density for debugging purposes
+    std::cout << "Density:\n";
+    for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int y = 0; y < NY; ++y) {
+            std::cout << std::fixed << rho_new[INDEX(x, y, NX)] << " ";
+        }
+        std::cout << "\n";
+    }
+
+    //Print the velocity for debugging purposes
+    std::cout << "Velocity:\n";
+    for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int y = 0; y < NY; ++y) {
+            std::cout << "(" << u_new[INDEX(x, y, NX)].first << ", " << u_new[INDEX(x, y, NX)].second << ") ";
+        }
+        std::cout << "\n";
+    }
+    
+    
 
     return 0; // End of simulation
 }
