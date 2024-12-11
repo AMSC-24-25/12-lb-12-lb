@@ -25,7 +25,7 @@ class LBmethod{
     const double nu = (u_lid * L) / Re;  // Kinematic viscosity calculated using Re
     const double tau = 3.0 * nu + 0.5;    // Relaxation time for BGK collision model
 
-    unsigned int flagvis=0;
+
 
     // Define D2Q9 lattice directions (velocity directions for D2Q9 model)
     const std::array<std::pair<int, int>, 9> direction = {
@@ -104,11 +104,7 @@ class LBmethod{
             }
         }
         PrintDistributionF();
-        
-        if (flagvis==0){
-            Save_equilibrium(rho, u, f_eq);
-            flagvis=1;
-        }
+        Save_equilibrium(rho, u, f_eq);
     }
 
 
