@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <array>
+#include <iomanip>
 
 //FIRST version, straight code no optimization
 
@@ -45,7 +46,7 @@ int main() {
         1.0 / 36.0, // Bottom-left diagonal
         1.0 / 36.0  // Bottom-right diagonal
     };
-
+    std::cout<<"Initialization\n";
     // Vectors to store simulation data
     std::vector<double> rho(NX * NY, rho0); // Density initialized to rho0 everywhere
     std::vector<std::pair<double, double>> u(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
@@ -53,12 +54,16 @@ int main() {
 
     //Print the density for debugging purposes
     std::cout << "Density:\n";
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            std::cout << std::fixed << rho[INDEX(x, y, NX)] << " ";
+    // Set fixed width for values
+    const int width = 12; // Adjust for number size
+    std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+    for (int y = NY - 1; y >= 0; --y) {
+        for (unsigned int x = 0; x < NX; ++x) {
+            std::cout << std::setw(width) << rho[INDEX(x, y, NX)] << ", ";
         }
         std::cout << "\n";
     }
+    std::cout << "\n";
 
     // Apply boundary condition: set velocity at the top lid (moving lid)
     for (unsigned int x = 0; x < NX; ++x) {
@@ -68,16 +73,17 @@ int main() {
     }
     //Print the velocity for debugging purposes
     std::cout << "Velocity:\n";
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            std::cout << "(" << u[INDEX(x, y, NX)].first << ", " << u[INDEX(x, y, NX)].second << ") ";
+    for (int y = NY - 1; y >= 0; --y) {
+        for (unsigned int x = 0; x < NX; ++x) {
+             std::cout << "(" << std::setw(width) << u[INDEX(x, y, NX)].first << ", " << std::setw(width) << u[INDEX(x, y, NX)].second << ") ";
         }
         std::cout << "\n";
     }
+    std::cout << "\n";
 
     // Compute the equilibrium distribution function f_eq
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
+    for (unsigned int y = 0; y < NY; ++y) {
+        for (unsigned int x = 0; x < NX; ++x) {
             size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
             double ux = u[idx].first; // Horizontal velocity at point (x, y)
             double uy = u[idx].second; // Vertical velocity at point (x, y)
@@ -94,91 +100,260 @@ int main() {
         }
     }
 
-    // Print the computed f_eq values for debugging purposes
-    std::cout << "Equilibrium distribution f_eq:\n";
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            size_t idx = INDEX(x, y, NX);
-            std::cout << "Point (" << x << ", " << y << "): ";
-            for (unsigned int i = 0; i < ndirections; ++i) {
-                std::cout << f_eq[INDEX3D(x, y, i, NX, ndirections)] << " ";
-            }
-            std::cout << "\n";
-        }
-    }
-    //The following function are unusful in the case of equilibrium, however are useful after when they give different results
-    //Calculate the density and velocity
-    std::vector<std::pair<double, double>> u_new(NX * NY, {0.0, 0.0});
-    std::vector<double> rho_new(NX * NY, 0);
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            size_t idx = INDEX(x, y, NX);
-            for (unsigned int i = 0; i < ndirections; ++i) {
-                double fi = f_eq[INDEX3D(x, y, i, NX, ndirections)];
-                rho_new[idx] += fi;
-                u_new[idx].first += fi * direction[i].first;
-                u_new[idx].second += fi * direction[i].second;
-            }
+    // Print the computed f_eq values in the desired block matrix layout
+    std::cout << "Equilibrium distribution f_eq in block matrix form:\n";
 
-            if (rho_new[idx] > 1e-10) {
-                u_new[idx].first /= rho_new[idx];
-                u_new[idx].second /= rho_new[idx];
-            }
-        }
-    }
-    //Print the density for debugging purposes
-    std::cout << "Density:\n";
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            std::cout << std::fixed << rho_new[INDEX(x, y, NX)] << " ";
-        }
-        std::cout << "\n";
-    }
+    // Define block layout: indices for each block
+    int block_layout[3][3] = {
+        {6, 2, 5}, // Top row: M6, M2, M5
+        {3, 0, 1}, // Middle row: M3, M0, M1
+        {7, 4, 8}  // Bottom row: M7, M4, M8
+    };
 
-    //Print the velocity for debugging purposes
-    std::cout << "Velocity:\n";
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            std::cout << "(" << u_new[INDEX(x, y, NX)].first << ", " << u_new[INDEX(x, y, NX)].second << ") ";
+    // Iterate over rows in the block layout
+    for (int row = 0; row < 3; ++row) { 
+        // Print each row of the block layout
+        for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+            for (int col = 0; col < 3; ++col) { 
+                int i = block_layout[row][col]; // Get the direction index for the block
+                for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                    std::cout << std::setw(width) << f_eq[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                }
+                std::cout << " | "; // Separator between blocks in a row
+            }
+            std::cout << "\n"; // End of row for the block
         }
-        std::cout << "\n";
+        std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
     }
-    //Now move the particles
+    std::cout << "\n";
+
     //define the actual distrubutin function: at start it is equal to f_eq
     std::vector<double> f(NX * NY * ndirections, 0.0); // distribution function array
-    for (unsigned int t=0;t<NSTEPS;++t){
-        //STREAMING
-        std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
-        //f(x,y,t+1)=f(x-cx,y-cy,t)
-        for (unsigned int x=0;x<NX;++x){
-            for (unsigned int y=0;y<NY;++y){
-                for (unsigned int i=0;i<ndirections;++i){
-                    int x_str = x - direction[i].first;
-                    int y_str = y - direction[i].second;
-                    //check for particles inside the walls (sorta BC but they will be applyied more specifically after)
-                    if(x_str<0) x_str=1;//bounceback (only position not velocity)
-                    if(x_str>=NX) x_str=NX-1;//bounceback
-                    if(y_str<0) y_str=1;//bounceback
-                    if(y_str>=NY) y_str=NY-1;//bounceback
-
-                    //apply straming function
-                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
-                }
+    for (unsigned int y = 0; y < NY; ++y) {
+        for (unsigned int x = 0; x < NX; ++x) {
+            for (unsigned int i=0;i<ndirections;++i){
+                f[INDEX3D(x,y,i,NX,ndirections)]=f_eq[INDEX3D(x,y,i,NX,ndirections)];
             }
         }
-        std::swap(f, f_temp);//f_temp is f at t=t+1 so now we use the new function f_temp in f
-        //BC
-        
+    }
+    // Print the f values in the desired block matrix layout
+    std::cout << "distribution f in block matrix form:\n";
+    std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+
+    // Iterate over rows in the block layout
+    for (int row = 0; row < 3; ++row) { 
+        // Print each row of the block layout
+        for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+            for (int col = 0; col < 3; ++col) { 
+                int i = block_layout[row][col]; // Get the direction index for the block
+                for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                    std::cout << std::setw(width) << f[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                }
+                std::cout << " | "; // Separator between blocks in a row
+            }
+            std::cout << "\n"; // End of row for the block
+        }
+        std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+    }
+    std::cout << "\n";
+
+
+
+    //PARTICLE MOVEMENT
+    for (unsigned int t=0;t<NSTEPS;++t){
+        std::cout<<"\n\nStep="<<t<<"\n";
         //COLLISION
         //we use f=f-(f-f_eq)/tau from BGK
-        for (unsigned int x=0;x<NX;++x){
-            for (unsigned int y=0;y<NY;++y){
+        for (unsigned int y = 0; y < NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
                 for (unsigned int i=0;i<ndirections;++i){
                     f[INDEX3D(x, y, i, NX, ndirections)]=f[INDEX3D(x, y, i, NX, ndirections)]-(f[INDEX3D(x, y, i, NX, ndirections)]-f_eq[INDEX3D(x, y, i, NX, ndirections)])/tau;
                 }
             }
         }
+
+        // Print the f values in the desired block matrix layout
+        std::cout << "distribution f after collision in block matrix form:\n";
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
+                }
+                std::cout << "\n"; // End of row for the block
+            }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+        }
+
+        //STREAMING
+        std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
+        //f(x,y,t+1)=f(x-cx,y-cy,t)
+        for (unsigned int y = 0; y < NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                for (unsigned int i=0;i<ndirections;++i){
+                    int x_str = (x - direction[i].first + NX) % NX;
+                    int y_str = (y - direction[i].second + NY) % NY;
+                    //apply straming function
+                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                }
+            }
+        }
+
+        // Print the f values in the desired block matrix layout
+        std::cout << "distribution f after streaming in block matrix form:\n";
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f_temp[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
+                }
+                std::cout << "\n"; // End of row for the block
+            }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+        }
+
+        //BC
+        std::vector<int> opposite = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //define a vector of opposite directions
+        // Bottom wall (no-slip)
+        for (int x = 0; x < NX; ++x) {
+            for (int i : {2, 5, 6}) { // Incoming from above
+                f_temp[INDEX3D(x, 0, i, NX, ndirections)] = f[INDEX3D(x, 0, opposite[i], NX, ndirections)];
+            }
+        }
+        // Left wall (no-slip)
+        for (int y = 0; y < NY; ++y) {
+            for (int i : {1, 5, 8}) { // Incoming from right
+                f_temp[INDEX3D(0, y, i, NX, ndirections)] = f[INDEX3D(0, y, opposite[i], NX, ndirections)];
+            }
+        }
+        // Right wall (no-slip)
+        for (int y = 0; y < NY; ++y) {
+            for (int i : {3, 6, 7}) { // Incoming from left
+                f_temp[INDEX3D(NX-1, y, i, NX, ndirections)] = f[INDEX3D(NX-1, y, opposite[i], NX, ndirections)];
+            }
+        }
+        // Top wall (moving lid)
+        for (int x = 0; x < NX; ++x) {
+            for (int i : {4, 7, 8}) { // Incoming from below
+                double delta_f = 6 * weight[i] * rho[INDEX(x,NY-1,NX)] * (direction[i].first * u_lid);
+                f_temp[INDEX3D(x, NY-1, i, NX, ndirections)] = f[INDEX3D(x, NY-1, opposite[i], NX, ndirections)] + delta_f;
+            }
+        }
+        std::swap(f, f_temp);//f_temp is f after BC so now we use the new function f_temp in f
+
+        // Print the f values in the desired block matrix layout
+        std::cout << "distribution f in block matrix form:\n";
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
+                }
+                std::cout << "\n"; // End of row for the block
+            }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+        }
+
+        //Calculate the density and velocity
+        for (unsigned int y = 0; y < NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                size_t idx = INDEX(x, y, NX);
+                double rho_local = 0.0;
+                double ux_local = 0.0;
+                double uy_local = 0.0;
+                for (unsigned int i = 0; i < ndirections; ++i) {
+                    const double fi = f[INDEX3D(x, y, i, NX, ndirections)];
+                    rho_local += fi;
+                    ux_local += fi * direction[i].first;
+                    uy_local += fi * direction[i].second;
+                }
+
+                if (rho_local > 1e-10) {
+                    ux_local /= rho_local;
+                    uy_local /= rho_local;
+                }
+                rho[idx]=rho_local;
+                u[idx].first=ux_local;
+                u[idx].second=uy_local;
+            }
+        }
+        //Print the density for debugging purposes
+        std::cout << "Density:\n";
+        for (int y = NY - 1; y >= 0; --y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                std::cout << std::setw(width) << rho[INDEX(x, y, NX)] << ", ";
+            }
+            std::cout << "\n";
+        }
+        std::cout << "\n";
+
+        //Print the velocity for debugging purposes
+        std::cout << "Velocity:\n";
+        for (int y = NY - 1; y >= 0; --y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                std::cout << "(" << std::setw(width) << u[INDEX(x, y, NX)].first << ", " << std::setw(width) << u[INDEX(x, y, NX)].second << ") ";
+            }
+            std::cout << "\n";
+        }
+        std::cout << "\n";
+        //Update f_eq
+        // Compute the equilibrium distribution function f_eq
+        for (unsigned int y = 0; y < NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
+                double ux = u[idx].first; // Horizontal velocity at point (x, y)
+                double uy = u[idx].second; // Vertical velocity at point (x, y)
+                double u2 = ux * ux + uy * uy; // Square of the speed magnitude
+
+                for (unsigned int i = 0; i < ndirections; ++i) {
+                    double cx = direction[i].first; // x-component of direction vector
+                    double cy = direction[i].second; // y-component of direction vector
+                    double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
+
+                    // Compute f_eq using the BGK collision formula
+                    f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+                }
+            }
+        }
+        // Print the f values in the desired block matrix layout
+        std::cout << "Equilibrium distribution f_eq in block matrix form:\n";
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f_eq[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
+                }
+                std::cout << "\n"; // End of row for the block
+            }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+        }
     }
+    
 
     return 0; // End of simulation
 }
