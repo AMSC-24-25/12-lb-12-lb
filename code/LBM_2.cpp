@@ -28,7 +28,7 @@ class LBmethod{
 
 
     // Define D2Q9 lattice directions (velocity directions for D2Q9 model)
-    const std::array<std::pair<int, int>, 9> direction = {
+    const std::vector<std::pair<int, int>> direction = {
         std::make_pair(0, 0),   // Rest direction
         std::make_pair(1, 0),   // Right
         std::make_pair(0, 1),   // Up
@@ -40,7 +40,7 @@ class LBmethod{
         std::make_pair(1, -1)   // Bottom-right diagonal
     };
     // D2Q9 lattice weights
-    const std::array<double, 9> weight = {
+    const std::vector<double> weight = {
         4.0 / 9.0,  // Weight for the rest direction
         1.0 / 9.0,  // Right
         1.0 / 9.0,  // Up
@@ -171,11 +171,52 @@ class LBmethod{
         std::cout << "File salvato" << std::endl;
     }
 
-    void UpdateMacro(){}
-    void Collisions(){}
-    void Streaming(){}
+    void UpdateMacro(std::vector<double>& rho, std::vector<std::pair<double, double>>& u, const std::vector<double>& fi){
+        for (unsigned int x = 0; x < NX; ++x) {
+            for (unsigned int y = 0; y < NY; ++y) {
+                size_t idx = INDEX(x, y, NX);
+                double rho_local = 0.0;
+                double ux_local = 0.0;
+                double uy_local = 0.0;
+                for (unsigned int i = 0; i < ndirections; ++i) {
+                    rho_local += fi[INDEX3D(x, y, i, NX, ndirections)];
+                    ux_local += fi[INDEX3D(x, y, i, NX, ndirections)] * direction[i].first;
+                    uy_local += fi[INDEX3D(x, y, i, NX, ndirections)] * direction[i].second;
+                }
+
+                if (rho_local > 1e-10) {
+                    ux_local /= rho_local;
+                    uy_local /= rho_local;
+                }
+                rho[idx]=rho_local;
+                u[idx].first=ux_local;
+                u[idx].second=uy_local;
+            }
+        }
+    }
+    void Collisions(){
+        //we use f=f-(f-f_eq)/tau from BGK
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int y=0;y<NY;++y){
+                for (unsigned int i=0;i<ndirections;++i){
+                    f[INDEX3D(x, y, i, NX, ndirections)]=f[INDEX3D(x, y, i, NX, ndirections)]-(f[INDEX3D(x, y, i, NX, ndirections)]-f_eq[INDEX3D(x, y, i, NX, ndirections)])/tau;
+                }
+            }
+        }
+    }
+    void Streaming(){
+        //f(x,y,t+1)=f(x-cx,y-cy,t)
+    }
     void BC(){}
-    void Run_simulation(const unsigned int NSTEPS){}
+    void Run_simulation(const unsigned int NSTEPS){
+        for (unsigned int t=0;t<NSTEPS;++t){
+            Streaming();
+            Collisions();
+            BC();
+            UpdateMacro();
+            Save_output();
+        }
+    }
     void Save_output(){}
     
 };
@@ -195,5 +236,3 @@ int main(){
     std::cout << "Simulation completed." << std::endl;
     return 0;
 }
-
-
