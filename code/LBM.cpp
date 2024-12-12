@@ -2,6 +2,8 @@
 #include <vector>
 #include <array>
 
+//FIRST version, straight code no optimization
+
 // Helper macro for 1D indexing from 2D or 3D coordinates
 #define INDEX(x, y, NX) ((x) + (NX) * (y)) // Convert 2D indices (x, y) into 1D index
 #define INDEX3D(x, y, i, NX, ndirections) ((i) + (ndirections) * ((x) + (NX) * (y)))
@@ -19,7 +21,7 @@ int main() {
     const double rho0 = 1.0;             // Initial uniform density at the start
 
     // Define D2Q9 lattice directions (velocity directions for D2Q9 model)
-    const std::array<std::pair<int, int>, 9> direction = {
+    const std::vector<std::pair<int, int>> direction = {
         std::make_pair(0, 0),   // Rest direction
         std::make_pair(1, 0),   // Right
         std::make_pair(0, 1),   // Up
@@ -32,7 +34,7 @@ int main() {
     };
 
     // D2Q9 lattice weights
-    const std::array<double, 9> weight = {
+    const std::vector<double> weight = {
         4.0 / 9.0,  // Weight for the rest direction
         1.0 / 9.0,  // Right
         1.0 / 9.0,  // Up
@@ -141,8 +143,42 @@ int main() {
         }
         std::cout << "\n";
     }
-    
-    
+    //Now move the particles
+    //define the actual distrubutin function: at start it is equal to f_eq
+    std::vector<double> f(NX * NY * ndirections, 0.0); // distribution function array
+    for (unsigned int t=0;t<NSTEPS;++t){
+        //STREAMING
+        std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
+        //f(x,y,t+1)=f(x-cx,y-cy,t)
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int y=0;y<NY;++y){
+                for (unsigned int i=0;i<ndirections;++i){
+                    int x_str = x - direction[i].first;
+                    int y_str = y - direction[i].second;
+                    //check for particles inside the walls (sorta BC but they will be applyied more specifically after)
+                    if(x_str<0) x_str=1;//bounceback (only position not velocity)
+                    if(x_str>=NX) x_str=NX-1;//bounceback
+                    if(y_str<0) y_str=1;//bounceback
+                    if(y_str>=NY) y_str=NY-1;//bounceback
+
+                    //apply straming function
+                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                }
+            }
+        }
+        std::swap(f, f_temp);//f_temp is f at t=t+1 so now we use the new function f_temp in f
+        //BC
+        
+        //COLLISION
+        //we use f=f-(f-f_eq)/tau from BGK
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int y=0;y<NY;++y){
+                for (unsigned int i=0;i<ndirections;++i){
+                    f[INDEX3D(x, y, i, NX, ndirections)]=f[INDEX3D(x, y, i, NX, ndirections)]-(f[INDEX3D(x, y, i, NX, ndirections)]-f_eq[INDEX3D(x, y, i, NX, ndirections)])/tau;
+                }
+            }
+        }
+    }
 
     return 0; // End of simulation
 }
