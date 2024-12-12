@@ -171,7 +171,7 @@ class LBmethod{
         std::cout << "File salvato" << std::endl;
     }
 
-    void UpdateMacro(std::vector<double>& rho, std::vector<std::pair<double, double>>& u, const std::vector<double>& fi){
+    void UpdateMacro(){
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
@@ -179,9 +179,10 @@ class LBmethod{
                 double ux_local = 0.0;
                 double uy_local = 0.0;
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    rho_local += fi[INDEX3D(x, y, i, NX, ndirections)];
-                    ux_local += fi[INDEX3D(x, y, i, NX, ndirections)] * direction[i].first;
-                    uy_local += fi[INDEX3D(x, y, i, NX, ndirections)] * direction[i].second;
+                    const double fi=f[INDEX3D(x, y, i, NX, ndirections)];
+                    rho_local += fi;
+                    ux_local += fi * direction[i].first;
+                    uy_local += fi * direction[i].second;
                 }
 
                 if (rho_local > 1e-10) {
@@ -206,6 +207,24 @@ class LBmethod{
     }
     void Streaming(){
         //f(x,y,t+1)=f(x-cx,y-cy,t)
+        std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int y=0;y<NY;++y){
+                for (unsigned int i=0;i<ndirections;++i){
+                    int x_str = x - direction[i].first;
+                    int y_str = y - direction[i].second;
+                    //check for particles inside the walls (sorta BC but they will be applyied more specifically after)
+                    if(x_str<0) x_str=1;//bounceback (only position not velocity)
+                    if(x_str>=NX) x_str=NX-1;//bounceback
+                    if(y_str<0) y_str=1;//bounceback
+                    if(y_str>=NY) y_str=NY-1;//bounceback
+
+                    //apply straming function
+                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                }
+            }
+        }
+        std::swap(f, f_temp);//f_temp is f at t=t+1 so now we use the new function f_temp in f
     }
     void BC(){}
     void Run_simulation(const unsigned int NSTEPS){
