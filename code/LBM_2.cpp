@@ -212,7 +212,7 @@ class LBmethod{
             BC();
             UpdateMacro();
 
-            if (t%2==0){
+            if (t%1==0){
                 Save_Output(t);
             }
 
