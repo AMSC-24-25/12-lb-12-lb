@@ -82,7 +82,16 @@ class LBmethod{
             u[INDEX(x, y, NX)].second = 0.0;  // Vertical velocity is 0 at the top lid
         }
 
-        
+        Equilibrium();
+        std::memcpy(f.data(), f_eq.data(), f.size() * sizeof(double));
+
+        std::cout << "Equilibrium (initial state):\n";
+        PrintDensity();
+        PrintVelocity();
+        PrintDistributionF();  
+    }
+
+    void Equilibrium(){
         // Compute the equilibrium distribution function f_eq
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
@@ -98,18 +107,10 @@ class LBmethod{
 
                     // Compute f_eq using the BGK collision formula
                     f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
-                    std::memcpy(f.data(), f_eq.data(), f.size() * sizeof(double));
                 }
             }
         }
-        std::cout << "Equilibrium (initial state):\n";
-        PrintDensity();
-        PrintVelocity();
-        PrintDistributionF();
-        //unsigned int t=0;
-        //Save_Output(t);
-        
-        
+
     }
 
     void UpdateMacro(){
@@ -125,24 +126,21 @@ class LBmethod{
                     ux_local += fi * direction[i].first;
                     uy_local += fi * direction[i].second;
                 }
-                if (rho_local > 1e-10) {
+                if (rho_local<1e-10){
+                    rho[idx] = 0.0;
+                    ux_local = 0.0;
+                    uy_local = 0.0;
+                }
+                else {
+                    rho[idx] = rho_local;
                     ux_local /= rho_local;
                     uy_local /= rho_local;
                 }
-                rho[idx]=rho_local;
-                u[idx].first=ux_local;
-                u[idx].second=uy_local;
-                for (unsigned int i = 0; i < ndirections; ++i){
-                    double ux = u[idx].first; // Horizontal velocity at point (x, y)
-                    double uy = u[idx].second; // Vertical velocity at point (x, y)
-                    double u2 = ux * ux + uy * uy; // Square of the speed magnitude
-                    double cx = direction[i].first; // x-component of direction vector
-                    double cy = direction[i].second; // y-component of direction vector
-                    double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
-                    f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
-                } 
+                u[INDEX(x, y, NX)].first=ux_local;
+                u[INDEX(x, y, NX)].second=uy_local;
             }
         }
+        Equilibrium();
     }
 
     void Collisions(){
@@ -213,9 +211,11 @@ class LBmethod{
             Streaming();
             BC();
             UpdateMacro();
+
             if (t%2==0){
                 Save_Output(t);
             }
+
             std::cout << "\n";
             std::cout << "Step: "+std::to_string(t+1)<< std::endl;
             PrintDensity();
