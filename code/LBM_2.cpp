@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <omp.h>
+#include <iomanip>
 
 
 // Helper macro for 1D indexing from 2D or 3D coordinates
@@ -227,37 +228,57 @@ class LBmethod{
 
     void PrintDensity(){
         std::cout << "Density:\n";
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
-                std::cout << std::fixed << rho[INDEX(x, y, NX)] << " ";
+        const int width = 12; // Adjust for number size
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        for (unsigned int y = 1; y <= NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                std::cout << std::setw(width) << rho[INDEX(x, NY-y, NX)] << ", ";
             }
             std::cout << "\n";
         }
+        std::cout << "\n";
     }
     
     void PrintVelocity(){
         std::cout << "Velocity:\n";
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
-                std::cout << "(" << u[INDEX(x, y, NX)].first << ", " << u[INDEX(x, y, NX)].second << ") ";
+        const int width = 12; // Adjust for number size
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        for (unsigned int y = 1; y <= NY; ++y) {
+            for (unsigned int x = 0; x < NX; ++x) {
+                std::cout << "(" << std::setw(width) << u[INDEX(x, NY-y, NX)].first << ", " << std::setw(width) << u[INDEX(x, NY-y, NX)].second << ") ";
             }
             std::cout << "\n";
         }
+        std::cout << "\n";
     }
 
     void PrintDistributionF(){
         // Print the computed f values for debugging purposes
         std::cout << "Distribution function:\n";
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
-                size_t idx = INDEX(x, y, NX);
-                std::cout << "Point (" << x << ", " << y << "): ";
-                for (unsigned int i = 0; i < ndirections; ++i) {
-                    std::cout << f[INDEX3D(x, y, i, NX, ndirections)] << " ";
+        const int width = 12; // Adjust for number size
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        // Define block layout: indices for each block
+        int block_layout[3][3] = {
+            {6, 2, 5}, // Top row: M6, M2, M5
+            {3, 0, 1}, // Middle row: M3, M0, M1
+            {7, 4, 8}  // Bottom row: M7, M4, M8
+        };
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f_eq[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
                 }
-                std::cout << "\n";
+                std::cout << "\n"; // End of row for the block
             }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
         }
+        std::cout << "\n";
     }
 
     void Save_Output(unsigned int t) {
