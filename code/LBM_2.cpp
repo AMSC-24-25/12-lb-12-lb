@@ -219,7 +219,12 @@ class LBmethod{
     
     void Run_simulation(){
         for (unsigned int t=0; t<NSTEPS; ++t){
-            u_lid_dyn = u_lid*double(t)/sigma;
+            if (double(t)<sigma){
+                u_lid_dyn = u_lid*double(t)/sigma;
+            }
+            else{
+                u_lid_dyn = u_lid;
+            }
             
             Collisions();
             Streaming();
@@ -357,7 +362,7 @@ class LBmethod{
 int main(){
     const unsigned int NSTEPS = 100;       // Number of timesteps to simulate
     const unsigned int NX = 100;           // Number of nodes in the x-direction
-    const double u_lid = 0.1;            // Lid velocity at the top boundary
+    const double u_lid = 0.4;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double L = 1.0;                // Length of the cavity
     const double rho = 1.0;             // Initial uniform density at the start
