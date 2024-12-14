@@ -22,10 +22,12 @@ class LBmethod{
     const double Re;             // Reynolds number
     const double L;                // Length of the cavity
     const double rho0;           // Initial uniform density at the start
+    double u_lid_dyn;
     //Fixed Parameters:
     const unsigned int ndirections = 9;   // Number of directions (D2Q9 model has 9 directions)
     const double nu = (u_lid * NY) / Re;  // Kinematic viscosity calculated using Re
     const double tau = 3.0 * nu + 0.5;    // Relaxation time for BGK collision model
+    const double sigma = 10.0; //this is a parameter that determines the slope of how fast u_lid_dyn tends to u_lid
 
     
 
@@ -75,22 +77,24 @@ class LBmethod{
         u.assign(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
         f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
         f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
-       
-        // Apply boundary condition: set velocity at the top lid (moving lid)
-        for (unsigned int x = 0; x < NX; ++x) {
-            unsigned int y = NY - 1; // Top boundary index
-            u[INDEX(x, y, NX)].first = u_lid; // Set horizontal velocity to u_lid
-            u[INDEX(x, y, NX)].second = 0.0;  // Vertical velocity is 0 at the top lid
-        }
 
-        Equilibrium();
-        std::memcpy(f.data(), f_eq.data(), f.size() * sizeof(double));
+
+        Equilibrium();//first equilibrium condition with rho=1 and u=0
+        //iniitialize the distribution function as a static one
+        for(unsigned int x=0;x<NX;++x){
+            for (unsigned int y=0;y<NY;++y){
+                for (unsigned int i=0;i<ndirections;++i){
+                    f[INDEX3D(x,y,i,NX,ndirections)]=weight[i];
+                }
+            }
+        }
 
         if (NX<=6){
             std::cout << "Equilibrium (initial state):\n";
             PrintDensity();
             PrintVelocity();
             PrintDistributionF(); 
+            PrintDistributionEquilibrium();
         }
          
     }
@@ -179,14 +183,14 @@ class LBmethod{
         //BCs
         //Sides + bottom angles
         //Left and right //maybe can be merged
-        for (unsigned int y=1;y<NY-1;++y){
+        for (unsigned int y=0;y<NY;++y){
             //Left
             for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
                 f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
             }
             //Right
             for (unsigned int i : {1,5,8}){//directions: right, top right, top left
-                f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+                f_temp[INDEX3D(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX3D(NX-1,y,i,NX,ndirections)];
             }
         }
         //Bottom
@@ -204,7 +208,7 @@ class LBmethod{
             }
             for (unsigned int i : {2,5,6}){//directions: up,top right, top left
                 //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-                double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid);
+                double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
                 f_temp[INDEX3D(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX3D(x,NY-1,i,NX,ndirections)] + deltaf;
             }
         }
@@ -215,7 +219,8 @@ class LBmethod{
     
     void Run_simulation(){
         for (unsigned int t=0; t<NSTEPS; ++t){
-
+            u_lid_dyn = u_lid*double(t)/sigma;
+            
             Collisions();
             Streaming();
             UpdateMacro();
@@ -226,9 +231,11 @@ class LBmethod{
             if (NSTEPS<10 && NX<=6){
                 std::cout << "\n";
                 std::cout << "Step: "+std::to_string(t+1)<< std::endl;
+                std::cout<<"lid velocity= "<<u_lid_dyn<<std::endl;
                 PrintDensity();
                 PrintVelocity();
                 PrintDistributionF();
+                PrintDistributionEquilibrium();
             }
         }
     }
@@ -263,6 +270,35 @@ class LBmethod{
     void PrintDistributionF(){
         // Print the computed f values for debugging purposes
         std::cout << "Distribution function:\n";
+        const int width = 12; // Adjust for number size
+        std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
+        // Define block layout: indices for each block
+        int block_layout[3][3] = {
+            {6, 2, 5}, // Top row: M6, M2, M5
+            {3, 0, 1}, // Middle row: M3, M0, M1
+            {7, 4, 8}  // Bottom row: M7, M4, M8
+        };
+        // Iterate over rows in the block layout
+        for (int row = 0; row < 3; ++row) { 
+            // Print each row of the block layout
+            for (int y = NY - 1; y >= 0; --y) { // Iterate through the y-coordinates
+                for (int col = 0; col < 3; ++col) { 
+                    int i = block_layout[row][col]; // Get the direction index for the block
+                    for (unsigned int x = 0; x < NX; ++x) { // Iterate over x-coordinates
+                        std::cout << std::setw(width) << f[INDEX3D(x, y, i, NX, ndirections)] << " ";
+                    }
+                    std::cout << " | "; // Separator between blocks in a row
+                }
+                std::cout << "\n"; // End of row for the block
+            }
+            std::cout << std::string(3 * (width * NX + 3 * NX) + 4, '-') << "\n"; // Horizontal divider
+        }
+        std::cout << "\n";
+    }
+
+    void PrintDistributionEquilibrium(){
+        // Print the computed f values for debugging purposes
+        std::cout << "Equilibrium distribution function:\n";
         const int width = 12; // Adjust for number size
         std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
         // Define block layout: indices for each block
@@ -319,8 +355,8 @@ class LBmethod{
 };
 
 int main(){
-    const unsigned int NSTEPS = 10;       // Number of timesteps to simulate
-    const unsigned int NX = 6;           // Number of nodes in the x-direction
+    const unsigned int NSTEPS = 100;       // Number of timesteps to simulate
+    const unsigned int NX = 100;           // Number of nodes in the x-direction
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double L = 1.0;                // Length of the cavity
