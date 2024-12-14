@@ -53,7 +53,8 @@ class LBmethod{
         1.0 / 36.0, // Bottom-left diagonal
         1.0 / 36.0  // Bottom-right diagonal
     };
-
+    
+    
     std::vector<double> rho; // Density 
     std::vector<std::pair<double, double>> u; // Velocity 
     std::vector<double> f_eq; // Equilibrium distribution function array
@@ -74,8 +75,7 @@ class LBmethod{
         u.assign(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
         f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
         f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
-
-
+       
         // Apply boundary condition: set velocity at the top lid (moving lid)
         for (unsigned int x = 0; x < NX; ++x) {
             unsigned int y = NY - 1; // Top boundary index
@@ -86,10 +86,13 @@ class LBmethod{
         Equilibrium();
         std::memcpy(f.data(), f_eq.data(), f.size() * sizeof(double));
 
-        std::cout << "Equilibrium (initial state):\n";
-        PrintDensity();
-        PrintVelocity();
-        PrintDistributionF();  
+        if (NX<=6){
+            std::cout << "Equilibrium (initial state):\n";
+            PrintDensity();
+            PrintVelocity();
+            PrintDistributionF(); 
+        }
+         
     }
 
     void Equilibrium(){
@@ -157,68 +160,81 @@ class LBmethod{
 
     void Streaming(){
         //f(x,y,t+1)=f(x-cx,y-cy,t)
+        std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //Opposite velocities
         std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
+
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
+
                     int x_str = x - direction[i].first;
                     int y_str = y - direction[i].second;
-                    //check for particles inside the walls (sorta BC but they will be applyied more specifically after)
-                    if(x_str<0) x_str=1;//bounceback (only position not velocity)
-                    if(x_str>=NX) x_str=NX-1;//bounceback
-                    if(y_str<0) y_str=1;//bounceback
-                    if(y_str>=NY) y_str=NY-1;//bounceback
-                    //apply straming function
-                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                    
+                    if (x_str<0 && y_str>0 && y_str<NY){
+                        //Left Boundary
+                        size_t opp=INDEX3D(0, y_str, opposites[i], NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    }
+                    else if (x_str>=NX && y_str>0 && y_str<NY){
+                        //Right Boundary
+                        size_t opp=INDEX3D(NX-1, y_str, opposites[i], NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    }
+                    else if (y_str<0 && x_str>0 && x_str<NX){
+                        //Bottom Boundary
+                        size_t opp=INDEX3D(x_str, 0, opposites[i], NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    }
+                    else if (y_str>=NY && x_str>0 && x_str<NY){
+                        //Top Boundary (lid)
+                        size_t opp=INDEX3D(x_str, NY-1, opposites[i], NX, ndirections);
+                        //f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[opp] - 6.0 * weight[i] * rho[INDEX(x_str,y_str,NX)] * direction[i].first * u_lid;
+                        f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid; //non so quale sia giusta
+                    }
+                    else if (x_str<0 && y_str<0){
+                        //SW corner
+                        size_t opp=INDEX3D(0,0,opposites[i],NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    }
+                    else if (x_str>=NX && y_str<0){
+                        //SE corner
+                        size_t opp=INDEX3D(NX-1,0,opposites[i],NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    }
+                    else if (x_str<0 && y_str>=NY){
+                        //NW corner
+                        size_t opp=INDEX3D(0,NY-1,opposites[i],NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid;;
+                    }
+                    else if (x_str>=NX && y_str>=NY){
+                        //NE corner
+                        size_t opp=INDEX3D(NX-1,NY-1,opposites[i],NX, ndirections);
+                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid;;
+                    }
+                    else {
+                        //apply simple straming
+                        f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                    }
+                    
                 }
             }
         }
+
         std::swap(f, f_temp);//f_temp is f at t=t+1 so now we use the new function f_temp in f
     }
 
-    void BC() {
-        //(since NX=NY we use only one outer for)
-        std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6};
-        
-        for(unsigned int a=0; a<NX; ++a) {
-            for(unsigned int i = 0; i < ndirections; ++i){
-                //TOP BOUNDARY: (LID-VELOCITY)
-                if (direction[i].second < 0) { 
-                    //fi=f_opposite - 6*wi*rho*ci*u_lid --> from lattice Boltzamann equilibrium function and momentum conservation
-                    size_t opp = INDEX3D(a, NY-1, opposites[i], NX, ndirections); // find the opposite direction of i
-                    f[INDEX3D(a, NY-1, i, NX, ndirections)] = f[opp] - 6.0 * weight[i] * rho[INDEX(a,NY-1,NX)] * direction[i].first * u_lid;    
-                }
-                //BOTTOM BOUNDARY: (NO-SLIP)(Stationary Wall)
-                if (direction[i].second> 0) { 
-                    size_t opp = INDEX3D(a, 0, opposites[i], NX, ndirections); // find the opposite direction of i
-                    f[INDEX3D(a, 0, i, NX, ndirections)] = f[opp];
-                }
-                //LEFT BOUNDARY:
-                if (direction[i].first> 0) { 
-                    size_t opp = INDEX3D(0, a, opposites[i], NX, ndirections);
-                    f[INDEX3D(0, a, i, NX, ndirections)] = f[opp];
-                }
-                //RIGHT BOUNDARY:
-                if (direction[i].first < 0) {
-                    size_t opp = INDEX3D(NX-1, a, opposites[i], NX, ndirections);
-                    f[INDEX3D(NX - 1, a, i, NX, ndirections)] = f[opp];
-                }
-            }
-        }
-
-    }
     
     void Run_simulation(){
         for (unsigned int t=0; t<NSTEPS; ++t){
+
             Collisions();
             Streaming();
-            BC();
             UpdateMacro();
 
             if (t%1==0){
                 Save_Output(t);
             }
-            if (NSTEPS<10){
+            if (NSTEPS<10 && NX<=6){
                 std::cout << "\n";
                 std::cout << "Step: "+std::to_string(t+1)<< std::endl;
                 PrintDensity();
@@ -314,8 +330,8 @@ class LBmethod{
 };
 
 int main(){
-    const unsigned int NSTEPS = 15;       // Number of timesteps to simulate
-    const unsigned int NX = 5;           // Number of nodes in the x-direction
+    const unsigned int NSTEPS = 10;       // Number of timesteps to simulate
+    const unsigned int NX = 50;           // Number of nodes in the x-direction
     const double u_lid = 1.0;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double L = 1.0;                // Length of the cavity
