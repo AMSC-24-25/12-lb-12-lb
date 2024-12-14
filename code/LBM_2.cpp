@@ -24,7 +24,7 @@ class LBmethod{
     const double rho0;           // Initial uniform density at the start
     //Fixed Parameters:
     const unsigned int ndirections = 9;   // Number of directions (D2Q9 model has 9 directions)
-    const double nu = (u_lid * L) / Re;  // Kinematic viscosity calculated using Re
+    const double nu = (u_lid * NY) / Re;  // Kinematic viscosity calculated using Re
     const double tau = 3.0 * nu + 0.5;    // Relaxation time for BGK collision model
 
     
@@ -169,54 +169,43 @@ class LBmethod{
 
                     int x_str = x - direction[i].first;
                     int y_str = y - direction[i].second;
-                    
-                    if (x_str<0 && y_str>0 && y_str<NY){
-                        //Left Boundary
-                        size_t opp=INDEX3D(0, y_str, opposites[i], NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
+                    //streaming process
+                    if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
+                        f_temp[INDEX3D(x,y,i,NX,ndirections)]=f[INDEX3D(x_str,y_str,i,NX,ndirections)];
                     }
-                    else if (x_str>=NX && y_str>0 && y_str<NY){
-                        //Right Boundary
-                        size_t opp=INDEX3D(NX-1, y_str, opposites[i], NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
-                    }
-                    else if (y_str<0 && x_str>0 && x_str<NX){
-                        //Bottom Boundary
-                        size_t opp=INDEX3D(x_str, 0, opposites[i], NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
-                    }
-                    else if (y_str>=NY && x_str>0 && x_str<NY){
-                        //Top Boundary (lid)
-                        size_t opp=INDEX3D(x_str, NY-1, opposites[i], NX, ndirections);
-                        //f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[opp] - 6.0 * weight[i] * rho[INDEX(x_str,y_str,NX)] * direction[i].first * u_lid;
-                        f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid; //non so quale sia giusta
-                    }
-                    else if (x_str<0 && y_str<0){
-                        //SW corner
-                        size_t opp=INDEX3D(0,0,opposites[i],NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
-                    }
-                    else if (x_str>=NX && y_str<0){
-                        //SE corner
-                        size_t opp=INDEX3D(NX-1,0,opposites[i],NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp];
-                    }
-                    else if (x_str<0 && y_str>=NY){
-                        //NW corner
-                        size_t opp=INDEX3D(0,NY-1,opposites[i],NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid;;
-                    }
-                    else if (x_str>=NX && y_str>=NY){
-                        //NE corner
-                        size_t opp=INDEX3D(NX-1,NY-1,opposites[i],NX, ndirections);
-                        f_temp[INDEX3D(x,y, i, NX, ndirections)] = f[opp] + (1 - weight[i]) * rho[INDEX(x_str, y_str, NX)] * u_lid;;
-                    }
-                    else {
-                        //apply simple straming
-                        f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
-                    }
-                    
                 }
+            }
+        }
+        //BCs
+        //Sides + bottom angles
+        //Left and right //maybe can be merged
+        for (unsigned int y=1;y<NY-1;++y){
+            //Left
+            for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
+                f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+            }
+            //Right
+            for (unsigned int i : {1,5,8}){//directions: right, top right, top left
+                f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+            }
+        }
+        //Bottom
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
+                f_temp[INDEX3D(x,0,opposites[i],NX,ndirections)]=f[INDEX3D(x,0,i,NX,ndirections)];
+            }
+        }
+        //Top
+        for (unsigned int x=0;x<NX;++x){
+            //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
+            double rho_local=0.0;
+            for (unsigned int i=0;i<ndirections;++i){
+                rho_local+=f[INDEX3D(x,NY-1,i,NX,ndirections)];
+            }
+            for (unsigned int i : {2,5,6}){//directions: up,top right, top left
+                //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
+                double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid);
+                f_temp[INDEX3D(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX3D(x,NY-1,i,NX,ndirections)] + deltaf;
             }
         }
 
@@ -331,8 +320,8 @@ class LBmethod{
 
 int main(){
     const unsigned int NSTEPS = 10;       // Number of timesteps to simulate
-    const unsigned int NX = 50;           // Number of nodes in the x-direction
-    const double u_lid = 1.0;            // Lid velocity at the top boundary
+    const unsigned int NX = 6;           // Number of nodes in the x-direction
+    const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double L = 1.0;                // Length of the cavity
     const double rho = 1.0;             // Initial uniform density at the start
