@@ -178,27 +178,29 @@ class LBmethod{
 
     void BC() {
         //(since NX=NY we use only one outer for)
+        std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6};
+        
         for(unsigned int a=0; a<NX; ++a) {
             for(unsigned int i = 0; i < ndirections; ++i){
                 //TOP BOUNDARY: (LID-VELOCITY)
                 if (direction[i].second < 0) { 
                     //fi=f_opposite - 6*wi*rho*ci*u_lid --> from lattice Boltzamann equilibrium function and momentum conservation
-                    size_t opp = INDEX3D(a, NY-1, (i + 4) % ndirections, NX, ndirections); // find the opposite direction of i
+                    size_t opp = INDEX3D(a, NY-1, opposites[i], NX, ndirections); // find the opposite direction of i
                     f[INDEX3D(a, NY-1, i, NX, ndirections)] = f[opp] - 6.0 * weight[i] * rho[INDEX(a,NY-1,NX)] * direction[i].first * u_lid;    
                 }
                 //BOTTOM BOUNDARY: (NO-SLIP)(Stationary Wall)
                 if (direction[i].second> 0) { 
-                    size_t opp = INDEX3D(a, 0, (i + 4) % ndirections, NX, ndirections); // find the opposite direction of i
+                    size_t opp = INDEX3D(a, 0, opposites[i], NX, ndirections); // find the opposite direction of i
                     f[INDEX3D(a, 0, i, NX, ndirections)] = f[opp];
                 }
                 //LEFT BOUNDARY:
                 if (direction[i].first> 0) { 
-                    size_t opp = INDEX3D(0, a, (i + 4) % ndirections, NX, ndirections);
+                    size_t opp = INDEX3D(0, a, opposites[i], NX, ndirections);
                     f[INDEX3D(0, a, i, NX, ndirections)] = f[opp];
                 }
                 //RIGHT BOUNDARY:
                 if (direction[i].first < 0) {
-                    size_t opp = INDEX3D(NX-1, a, (i + 4) % ndirections, NX, ndirections);
+                    size_t opp = INDEX3D(NX-1, a, opposites[i], NX, ndirections);
                     f[INDEX3D(NX - 1, a, i, NX, ndirections)] = f[opp];
                 }
             }
@@ -216,12 +218,13 @@ class LBmethod{
             if (t%1==0){
                 Save_Output(t);
             }
-
-            std::cout << "\n";
-            std::cout << "Step: "+std::to_string(t+1)<< std::endl;
-            PrintDensity();
-            PrintVelocity();
-            PrintDistributionF();
+            if (NSTEPS<10){
+                std::cout << "\n";
+                std::cout << "Step: "+std::to_string(t+1)<< std::endl;
+                PrintDensity();
+                PrintVelocity();
+                PrintDistributionF();
+            }
         }
     }
 
