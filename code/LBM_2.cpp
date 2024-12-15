@@ -1,13 +1,18 @@
 #include <iostream>
 #include <fstream>
 #include <cstring> 
+#include <string>
+#include <filesystem>
 #include <vector>
 #include <array>
 #include <cmath>
 #include <omp.h>
 #include <iomanip>
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
 
-
+namespace fs=std::filesystem;
 // Helper macro for 1D indexing from 2D or 3D coordinates
 #define INDEX(x, y, NX) ((x) + (NX) * (y)) // Convert 2D indices (x, y) into 1D index
 #define INDEX3D(x, y, i, NX, ndirections) ((i) + (ndirections) * ((x) + (NX) * (y)))
@@ -218,6 +223,14 @@ class LBmethod{
 
     
     void Run_simulation(){
+
+        // Ensure the directory for frames exists
+        std::string frame_dir = "frames";
+        if (!fs::exists(frame_dir)) {
+            fs::create_directory(frame_dir);
+            std::cout << "Directory created for frames: " << frame_dir << std::endl;
+        }
+
         for (unsigned int t=0; t<NSTEPS; ++t){
             if (double(t)<sigma){
                 u_lid_dyn = u_lid*double(t)/sigma;
@@ -232,6 +245,7 @@ class LBmethod{
 
             if (t%1==0){
                 Save_Output(t);
+                Visualization(t);
             }
             if (NSTEPS<10 && NX<=6){
                 std::cout << "\n";
@@ -330,8 +344,78 @@ class LBmethod{
         std::cout << "\n";
     }
 
+    void Visualization(unsigned int t){
+        static cv::Mat velocity_magn_mat, density_mat;
+        static cv::Mat velocity_magn_norm, density_norm;
+        static cv::Mat velocity_heatmap, density_heatmap;
+
+        // Initialize only when t == 0
+        if (t == 0) {
+        // Initialize the heatmaps with the same size as the grid
+            velocity_magn_mat = cv::Mat(NX, NY, CV_32F);
+            density_mat = cv::Mat(NX, NY, CV_32F);
+        
+            // Create matrices for normalized values
+            velocity_magn_norm = cv::Mat(NX, NY, CV_32F);
+            density_norm = cv::Mat(NX, NY, CV_32F);
+
+            // Create heatmap images (8 bit images)
+            velocity_heatmap = cv::Mat(NX, NY, CV_8UC3);
+            density_heatmap = cv::Mat(NX, NY, CV_8UC3);
+        }
+
+        // Fill matrices with new data
+        for (unsigned int x = 0; x < NX; ++x) {
+            for (unsigned int y = 0; y < NY; ++y) {
+                size_t idx = INDEX(x, y, NX);
+                double ux = u[idx].first;
+                double uy = u[idx].second;
+                velocity_magn_mat.at<float>(x, y) = std::sqrt(ux * ux + uy * uy);
+                density_mat.at<float>(x, y) = static_cast<float>(rho[idx]);
+            }
+        }
+
+        // Normalize the matrices to 0-255 for display
+        cv::normalize(velocity_magn_mat, velocity_magn_norm, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(density_mat, density_norm, 0, 255, cv::NORM_MINMAX);
+
+        //8-bit images
+        velocity_magn_norm.convertTo(velocity_magn_norm, CV_8U);
+        density_norm.convertTo(density_norm, CV_8U);
+
+        // Apply color maps
+        cv::applyColorMap(velocity_magn_norm, velocity_heatmap, cv::COLORMAP_PLASMA);
+        cv::applyColorMap(density_norm, density_heatmap, cv::COLORMAP_VIRIDIS);
+
+        // Combine both heatmaps horizontally
+        cv::Mat combined;
+        cv::hconcat(velocity_heatmap, density_heatmap, combined);
+
+        // Display the updated frame in a window (optional for real-time visualization)
+        cv::imshow("Velocity (Left) and Density (Right)", combined);
+        cv::waitKey(1); // 1 ms delay for real-time visualization
+
+        
+        // Save the current frame to a file
+        std::string filename = "frames/frame_" + std::to_string(t) + ".png";
+        cv::imwrite(filename, combined);
+        
+        
+    }
+
     void Save_Output(unsigned int t) {
-        std::ofstream file("output_" + std::to_string(t) + ".csv");
+
+        //Define subfolder name
+        std::string folder_name="output_files";
+
+        //Create subfolder
+        if (!fs::exists(folder_name)){
+            fs::create_directory(folder_name);
+        }
+
+        //Construct file path
+        std::string file_path= folder_name + "/file_" + std::to_string(t)+ ".cvs";
+        std::ofstream file(file_path);
         if (!file.is_open()) {
             std::cerr << "Errore: impossibile aprire il file." << std::endl;
             return;
@@ -360,7 +444,7 @@ class LBmethod{
 };
 
 int main(){
-    const unsigned int NSTEPS = 100;       // Number of timesteps to simulate
+    const unsigned int NSTEPS = 500;       // Number of timesteps to simulate
     const unsigned int NX = 100;           // Number of nodes in the x-direction
     const double u_lid = 0.4;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
@@ -371,6 +455,7 @@ int main(){
     lb.Initialize();
     lb.Run_simulation();
 
-    std::cout << "Simulation completed." << std::endl;
+    std::cout << "Simulation completed. Use ffmpeg to generate a video:" << std::endl;
+    std::cout << "ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4" << std::endl;
     return 0;
 }
