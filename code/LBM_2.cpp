@@ -244,10 +244,10 @@ class LBmethod{
             UpdateMacro();
 
             if (t%1==0){
-                Save_Output(t);
                 Visualization(t);
             }
             if (NSTEPS<10 && NX<=6){
+                Save_Output(t);
                 std::cout << "\n";
                 std::cout << "Step: "+std::to_string(t+1)<< std::endl;
                 std::cout<<"lid velocity= "<<u_lid_dyn<<std::endl;
