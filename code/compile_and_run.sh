@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Set environment variables
-#export LD_LIBRARY_PATH=/u/sw/toolchains/gcc-glibc/11.2.0/prefix/lib:/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+# Line to run: copy the two lines below in the prompt
+# chmod +x compile_and_run.sh
+# ./compile_and_run.sh
 
 # Compile the program
 gcc-10 -std=c++17 -fopenmp $(pkg-config --cflags --libs opencv4) -o LBM_esec LBM_2.cpp -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lstdc++ -lm
