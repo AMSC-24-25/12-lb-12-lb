@@ -352,16 +352,17 @@ class LBmethod{
         // Initialize only when t == 0
         if (t == 0) {
         // Initialize the heatmaps with the same size as the grid
-            velocity_magn_mat = cv::Mat(NX, NY, CV_32F);
-            density_mat = cv::Mat(NX, NY, CV_32F);
+            //OpenCV uses a row-major indexing
+            velocity_magn_mat = cv::Mat(NY, NX, CV_32F);
+            density_mat = cv::Mat(NY, NX, CV_32F);
         
             // Create matrices for normalized values
-            velocity_magn_norm = cv::Mat(NX, NY, CV_32F);
-            density_norm = cv::Mat(NX, NY, CV_32F);
+            velocity_magn_norm = cv::Mat(NY, NX, CV_32F);
+            density_norm = cv::Mat(NY, NX, CV_32F);
 
             // Create heatmap images (8 bit images)
-            velocity_heatmap = cv::Mat(NX, NY, CV_8UC3);
-            density_heatmap = cv::Mat(NX, NY, CV_8UC3);
+            velocity_heatmap = cv::Mat(NY, NX, CV_8UC3);
+            density_heatmap = cv::Mat(NY, NX, CV_8UC3);
         }
 
         // Fill matrices with new data
@@ -370,8 +371,8 @@ class LBmethod{
                 size_t idx = INDEX(x, y, NX);
                 double ux = u[idx].first;
                 double uy = u[idx].second;
-                velocity_magn_mat.at<float>(x, y) = std::sqrt(ux * ux + uy * uy);
-                density_mat.at<float>(x, y) = static_cast<float>(rho[idx]);
+                velocity_magn_mat.at<float>(y, x) = std::sqrt(ux * ux + uy * uy);
+                density_mat.at<float>(y, x) = static_cast<float>(rho[idx]);
             }
         }
 
@@ -386,6 +387,10 @@ class LBmethod{
         // Apply color maps
         cv::applyColorMap(velocity_magn_norm, velocity_heatmap, cv::COLORMAP_PLASMA);
         cv::applyColorMap(density_norm, density_heatmap, cv::COLORMAP_VIRIDIS);
+
+        //Flip the image vertically (OpenCV works in the opposite way than our code)
+        cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
+        cv::flip(density_heatmap, density_heatmap, 0);
 
         // Combine both heatmaps horizontally
         cv::Mat combined;
@@ -459,3 +464,4 @@ int main(){
     std::cout << "ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4" << std::endl;
     return 0;
 }
+
