@@ -67,10 +67,6 @@ class LBmethod{
     std::vector<double> f_eq; // Equilibrium distribution function array
     std::vector<double> f; //  Distribution function array
 
-    // Maximum number of threads
-    const unsigned int n_threads= omp_get_max_threads();
-    //omp_set_num_threads(n_threads);
-
     public:
     //Constructor:
     LBmethod(const unsigned int NSTEPS, const unsigned int NX, const double u_lid, const double Re, const double L, const double rho0 ): NSTEPS(NSTEPS), NX(NX), u_lid(u_lid), Re(Re), L(L), rho0(rho0){}
@@ -86,6 +82,7 @@ class LBmethod{
 
         Equilibrium();//first equilibrium condition with rho=1 and u=0
         //iniitialize the distribution function as a static one
+        #pragma omp parallel for collapse(2)
         for(unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
@@ -106,6 +103,10 @@ class LBmethod{
 
     void Equilibrium(){
         // Compute the equilibrium distribution function f_eq
+        //collapse(2) combines the 2 loops into a single iteration space-> convient when I have large Nx and Ny (not when they're really different tho)
+        //static ensure uniform distribution
+        //I don't do collapse(3) because the inner loop is light
+        #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
@@ -127,12 +128,16 @@ class LBmethod{
     }
 
     void UpdateMacro(){
+        #pragma omp parallel for collapse(2) schedule(static)
+        //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
                 double rho_local = 0.0;
                 double ux_local = 0.0;
                 double uy_local = 0.0;
+
+                #pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX3D(x, y, i, NX, ndirections)];
                     rho_local += fi;
@@ -157,6 +162,7 @@ class LBmethod{
     }
 
     void Collisions(){
+        #pragma omp parallel for collapse(2) schedule(static)
         //we use f=f-(f-f_eq)/tau from BGK
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
@@ -172,6 +178,9 @@ class LBmethod{
         std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //Opposite velocities
         std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
 
+        //paralleliation only in the bulk streaming
+        //Avoid at boundaries to prevent race conditions
+        #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
@@ -223,6 +232,9 @@ class LBmethod{
 
     
     void Run_simulation(){
+
+        // Set threads for this simulation
+        omp_set_num_threads(omp_get_max_threads());
 
         // Ensure the directory for frames exists
         std::string frame_dir = "frames";
@@ -366,6 +378,7 @@ class LBmethod{
         }
 
         // Fill matrices with new data
+        #pragma omp parallel for collapse(2)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
@@ -396,10 +409,11 @@ class LBmethod{
         cv::Mat combined;
         cv::hconcat(velocity_heatmap, density_heatmap, combined);
 
-        // Display the updated frame in a window (optional for real-time visualization)
-        cv::imshow("Velocity (Left) and Density (Right)", combined);
-        cv::waitKey(1); // 1 ms delay for real-time visualization
-
+        if(NSTEPS<=300){
+            // Display the updated frame in a window
+            cv::imshow("Velocity (Left) and Density (Right)", combined);
+            cv::waitKey(1); // 1 ms delay for real-time visualization
+        }
         
         // Save the current frame to a file
         std::string filename = "frames/frame_" + std::to_string(t) + ".png";
@@ -449,7 +463,7 @@ class LBmethod{
 };
 
 int main(){
-    const unsigned int NSTEPS = 500;       // Number of timesteps to simulate
+    const unsigned int NSTEPS = 1000;       // Number of timesteps to simulate
     const unsigned int NX = 100;           // Number of nodes in the x-direction
     const double u_lid = 0.4;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
