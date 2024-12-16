@@ -42,22 +42,23 @@ where:
 
 ### Collision term
 THe collision term can be treated in many different ways, the approch that we followed is to use the Bhatnagar Gross Krook model for relaxation equilibrium:
-$C(f)=f_i(\mathbf{x},t)+\frac{f_i^{eq}(\mathbf{x},t)-f_i(\mathbf{x},t)}{\tau}$
+$C(f)=\frac{f_i^{eq}(\mathbf{x},t)-f_i(\mathbf{x},t)}{\tau}$
 where:
 * $f_i^{eq}$ is the equiliobrium distribution function obtained after a truncation of a Taylor expansion from the complete equation $f^{eq}=\frac{\rho}{(2\pi RT)^{D/2}} e^{-\frac{(\mathbf{e} - \mathbf{u})^2}{2RT}}$ where D is the dimnesion, R the universal gas costant and T absolute temperature related to the sound velocity by $c_s=3RT$. After the trunccation we obtain $f_i^{eq}=w_i\rho(1+\frac{3\mathbf{e} \cdot \mathbf{u}}{c_s^2}+\frac{9(\mathbf{e} \cdot \mathbf{u})^2}{2c_s^4}-\frac{3(\mathbf{u})^2}{2c_s^2})$
-* $\tau$ is related to the kinematic viscosity $\nu$ by $\tau = \frac{\nu}{c_s^2}+0.5$ and $nu% can be obtained from the Reynolds number $Re=\frac{u_lidL}{\nu}$ where $u_lid$ is the lid velocity in lattice units and $$L is the height of the cavity in lattice units (so $L=NY$)
+* $\tau$ is related to the kinematic viscosity $\nu$ by $\tau = \frac{\nu}{c_s^2}+0.5$ and $nu% can be obtained from the Reynolds number $Re=\frac{u_lidL}{\nu}$ where $u_lid$ is the lid velocity in lattice units and $$L is the height of the cavity in lattice units (so $L=NY$).
 
 ### Boundry conditions
-The problem requested a lid driven cavity so the boundry condition for 3 of the four walls can be chosen arbitartly. For a simple description our approch was to describe all the collision with the borse as elastic and assume perfect reflection at borders. In order to account to the driven top boundry condition we used Dirchlet boundry condition $f_{opp(i)}=f_i-2w_i\rho\frac{\mathbf{e_i} \cdot \mathbf{u}_{lid}}{c_s^2}$ with $\rho$ local density
+The problem requested a lid driven cavity so the boundry condition for 3 of the four walls can be chosen arbitartly. For a simple description our approch was to describe all the collision with the borse as elastic and assume perfect reflection at borders. In order to account to the driven top boundry condition we used Dirchlet boundry condition $f_{opp(i)}=f_i-2w_i\rho\frac{\mathbf{e_i} \cdot \mathbf{u}_{lid}}{c_s^2}$ with $\rho$ local density and $opp(i)$ the opposite direction of i (so for example if $i$ is right: (1,0) then $opp(i)$ will be left: (-1,0).
 
 ## Code structure
 ### Initialization
-In this process we perfrom the initialization of the quantity in particular we start from a full null velocity, a uniform and equal density (that in lattice units it's 1) and a distribution function based only on the weights: $f_i(\mathbf{x},t=0)=w_i$. Here the equilibrium distribution function can be calculated with the formula from the Taylor expansion above or, since we are in a static initial case, as a copi of $f$
+In this process we perfrom the initialization of the quantity in particular we start from a full null velocity, a uniform and equal density (that in lattice units it's 1) and a distribution function based only on the weights: $f_i(\mathbf{x},t=0)=w_i$. Here the equilibrium distribution function can be calculated with the formula from the Taylor expansion above or, since we are in a static initial case, as a copi of $f$.
 
 ### Collision
-THe collision term is a simple result of 
+THe collision term is a simple result of the BGK approch explained above so we redefine the probability distribution function as a result of the operation $f_i^{after-collision}(\mathbf{x},t)=f_i(\mathbf{x},t)+\frac{f_i^{eq}(\mathbf{x},t)-f_i(\mathbf{x},t)}{\tau}$
 
 ### Streaming and boundry conditions
+The streaming term is simply described by a variation in the space coordinate in time: $f_i(\mathbf{x}+\mathbf{e_i}\delta_t,t+delta_t)=f_i(\mathbf{x},t)$. ABout the boundry condition the idea is to invert the direction of the particles that are flowing outside so we consider the particles at the borders that are going outside and we simply reflect their direction. For instance if we take a particle that has $\mathbf{x}=(NX-1,y)$ with direction right we impose that after this step it will have diretion left and will be again in the cell $\mathbf{x}=(NX-1,y)$. 
 
 ### Calculation of macroscopi quantities
 
