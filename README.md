@@ -50,13 +50,17 @@ where:
 ### Boundry conditions
 The problem requested a lid driven cavity so the boundry condition for 3 of the four walls can be chosen arbitartly. For a simple description our approch was to describe all the collision with the borse as elastic and assume perfect reflection at borders. In order to account to the driven top boundry condition we used Dirchlet boundry condition $f_{opp(i)}=f_i-2w_i\rho\frac{\mathbf{e_i} \cdot \mathbf{u}_{lid}}{c_s^2}$ with $\rho$ local density
 
-## Code steps
+## Code structure
 ### Initialization
+In this process we perfrom the initialization of the quantity in particular we start from a full null velocity, a uniform and equal density (that in lattice units it's 1) and a distribution function based only on the weights: $f_i(\mathbf{x},t=0)=w_i$. Here the equilibrium distribution function can be calculated with the formula from the Taylor expansion above or, since we are in a static initial case, as a copi of $f$
 
-###Collision
+### Collision
+THe collision term is a simple result of 
 
 ### Streaming and boundry conditions
 
 ### Calculation of macroscopi quantities
 
 ### Printing result and videomaking
+
+## Key feature
