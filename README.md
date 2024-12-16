@@ -7,7 +7,7 @@ The physical approch of this is based on the discretization of the 2D Boltzmann 
 For the space discretizaion we used a common equispaced Grid in 2D: $dx, dy$
 
 ### Time discretization
-For the time discretization we used equispaced time with distance $dt=\frac{dx}/{c_s}$ where $c_s$ is the lattice sound speed.
+For the time discretization we used equispaced time with distance $dt=\frac{dx}{c_s}$ where $c_s$ is the lattice sound speed.
 
 ### ANgle discretization
 In order to discretize the angle we followed the D2Q9 apporch that consider only 9 possible directions of the particles since the moving time step allows to move of only one square.
@@ -18,3 +18,8 @@ We have also added according to that model a weight specific of any direction.
 ### Boltzmann equation
 The Boltzmann equation describes the behaviour of thermodynaic system by the use of the probability density function. The resulting differential equation obtained in the general case is:
 $\frac{\partial f}{\partial t} + \mathbf{v} \cdot \nabla f + \mathbf{F} \cdot \nabla_{\mathbf{v}} f = \left( \frac{\partial f}{\partial t} \right)_{\text{coll}}$
+where:
+* $f$ is the probability distribution function that in general is a function of postion $\mathbf{x}$, velocity $\mathbf{v}$ and time $t$. The behaviour on the velocity can be decomposed in the behaviour with energy $E$ and direction $\mathbf{\Omega}$: $f(\mathbf{x},E,\mathbf{\Omega},t)$. It is defined as $dN=f(\mathbf{x},\mathbf{v},t)d^3\mathbf{x}d^3\mathbf{v}$ with N number of particles.
+* $\mathbf{F}$ is the Force field acting on the particles
+* $\left(\frac{\partial f}{\partial t} \right)_{\text{coll}}$ is the term that describes collision and can be modelled in many different ways depending on our goal. It can be even neglected leading to a collisionless description.
+
