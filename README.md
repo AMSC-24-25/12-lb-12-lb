@@ -15,3 +15,9 @@ In order to discretize the angle we followed the D2Q9 apporch that consider only
 ##Physical interpretation
 ###Boltzmann equation
 
+### Installing
+
+* How/where to download your program
+* Any modifications needed to be made to files/folders
+
+### Executing program
