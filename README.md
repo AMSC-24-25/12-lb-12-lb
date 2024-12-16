@@ -1,17 +1,27 @@
 # CFD library for Lattice Boltzmann Method
-THe main goal is to write a library in order to exploit LBM method using the arguments of the course AMSC
+The main goal is to write a library in order to exploit LBM method using the arguments of the course AMSC
+
+## Compiling
+
+## Runnning
+In order to run the code we need these lines: <br /> <br />
+cd code <br />
+chmod +x compile_and_run.sh <br />
+./compile_and_run.sh <br />
+<br />
+the first one is just to move in the folder of the code while the second compile the file with all the information needed to compute the program and the third one run that file. 
 
 ## Overview
-The physical approch of this is based on the discretization of the 2D Boltzmann equation
+The physical approch of this is based on the discretization of the 2D Boltzmann equation. <br />
 
 ### Space discretization
-For the space discretizaion we used a common equispaced Grid in 2D: $\delta_x, \delta_y$
+For the space discretizaion we used a common equispaced Grid in 2D: $\delta_x, \delta_y$ <br />
 
 ### Time discretization
 For the time discretization we used equispaced time with distance $\delta_t=\frac{\delta_x}{c_s}$ where $c_s$ is the lattice sound speed. All the equation in the code are arleady computed for $c_s=\frac{1}{\sqrt{3}}$
 
 ### Angle discretization
-In order to discretize the angle we followed the D2Q9 apporch that consider only 9 possible directions of the particles since the moving time step allows to move of only one square.
+In order to discretize the angle we followed the D2Q9 apporch that consider only 9 possible directions of the particles since the moving time step allows to move of only one square. <br />
 We have also added according to that model a weight specific of any direction: for the D2Q9 model 
 $$
 w_i = \begin{cases} 
@@ -20,8 +30,8 @@ w_i = \begin{cases}
 \frac{1}{36} & \text{if } i \in \{5, 6, 7, 8\} 
 \end{cases}
 $$
-The general approch is the DnQm where n is the number of dimensions and m is the number of speeds.
-In order to use dimsension quantity like speed and position we need to convert them into lattice units so the height will become L->NY where NY is the number of points along y in the lattice
+The general approch is the DnQm where n is the number of dimensions and m is the number of speeds. <br />
+In order to use dimsension quantity like speed and position we need to convert them into lattice units so the height will become L->NY where NY is the number of points along y in the lattice. <br />
 
 ## Physical interpretation and mathematical development
 
@@ -60,8 +70,14 @@ THe collision term is a simple result of the BGK approch explained above so we r
 ### Streaming and boundry conditions
 The streaming term is simply described by a variation in the space coordinate in time: $f_i(\mathbf{x}+\mathbf{e_i}\delta_t,t+delta_t)=f_i(\mathbf{x},t)$. ABout the boundry condition the idea is to invert the direction of the particles that are flowing outside so we consider the particles at the borders that are going outside and we simply reflect their direction. For instance if we take a particle that has $\mathbf{x}=(NX-1,y)$ with direction right we impose that after this step it will have diretion left and will be again in the cell $\mathbf{x}=(NX-1,y)$. 
 
-### Calculation of macroscopi quantities
+### Calculation of macroscopic quantities
+From the calculation of the probability distribution function we can have all the macroscopic quantities such as density $\rho$ and velocity $\mathbf{u}$. In order to calculate them we use $\rho=\sum_i f_i$ and $\mathbf{u}=\frac{sum_i f_i\mathbf{e_i}}{\rho}
 
 ### Printing result and videomaking
 
 ## Key feature
+### Lid velocity considerations
+In order to avoid numerical instability due to the fact that the velocity is, at the first step, different from zero at the top and the probability distribution function instead describes a static situation we decided to use at first a zero velocity on all the fluid. Then we linearly increase the lid velocity till the desired value, in this way we plan to resolve possible instability in the first steps of the code
+### Parallelization
+We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:
+
