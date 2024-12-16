@@ -8,6 +8,8 @@
 #include <cmath>
 #include <omp.h>
 #include <iomanip>
+#include <chrono>
+#include <cstdlib>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -25,9 +27,9 @@ class LBmethod{
     const unsigned int NY = NX;           // Number of nodes in the y-direction (square domain)
     const double u_lid;            // Lid velocity at the top boundary
     const double Re;             // Reynolds number
-    const double L;                // Length of the cavity
     const double rho0;           // Initial uniform density at the start
     double u_lid_dyn;
+    const unsigned int num_cores; // Number of threads for parallelization
     //Fixed Parameters:
     const unsigned int ndirections = 9;   // Number of directions (D2Q9 model has 9 directions)
     const double nu = (u_lid * NY) / Re;  // Kinematic viscosity calculated using Re
@@ -69,8 +71,9 @@ class LBmethod{
 
     public:
     //Constructor:
-    LBmethod(const unsigned int NSTEPS, const unsigned int NX, const double u_lid, const double Re, const double L, const double rho0 ): NSTEPS(NSTEPS), NX(NX), u_lid(u_lid), Re(Re), L(L), rho0(rho0){}
-   
+    public:
+    LBmethod(const unsigned int NSTEPS, const unsigned int NX, const double u_lid, const double Re, const double rho0, const unsigned int num_cores)
+        : NSTEPS(NSTEPS), NX(NX), u_lid(u_lid), Re(Re), rho0(rho0), num_cores(num_cores) {}
     //Methods:
     void Initialize(){
         //Vectors to store simulation data:
@@ -234,7 +237,7 @@ class LBmethod{
     void Run_simulation(){
 
         // Set threads for this simulation
-        omp_set_num_threads(omp_get_max_threads());
+        omp_set_num_threads(num_cores);
 
         // Ensure the directory for frames exists
         std::string frame_dir = "frames";
@@ -269,6 +272,7 @@ class LBmethod{
                 PrintDistributionEquilibrium();
             }
         }
+        ConfrontData();
     }
 
 
@@ -459,23 +463,88 @@ class LBmethod{
         file.close();
         std::cout << "File at t = " + std::to_string(t) + " saved" << std::endl;
     }
+
+    void ConfrontData() {
+        unsigned int x_c = int(NX / 2);  // Central x-coordinate
+        unsigned int y_c = NY / 2;  // Central x-coordinate
+        std::string output_file = "velocity_along_center.csv";
+        std::ofstream file(output_file);
+
+        if (!file.is_open()) {
+            std::cerr << "Error: Unable to open the output file." << std::endl;
+            return;
+        }
+        file<< "Vertical line:\n";
+        file << "y,velocity_magnitude\n";
+
+        for (unsigned int y = 0; y < NY; ++y) {
+            size_t idx = INDEX(x_c, NY-y, NX);
+            double ux = u[idx].first;
+            double uy = u[idx].second;
+            double velocity_magnitude = std::sqrt(ux * ux + uy * uy)/u_lid;
+
+            file << NY-y << "," << velocity_magnitude << "\n";
+        }
+
+        file<<"\n\n";
+        file<< "Horizontal line:\n";
+        file << "x,velocity_magnitude\n";
+
+        for (unsigned int x = 0; x < NX; ++x) {
+            size_t idx = INDEX(NX-x, y_c, NX);
+            double ux = u[idx].first;
+            double uy = u[idx].second;
+            double velocity_magnitude = std::sqrt(ux * ux + uy * uy)/u_lid;
+
+            file << NX-x << "," << velocity_magnitude << "\n";
+        }
+
+        file.close();
+        std::cout << "Velocity magnitudes along the central line have been written to: " << output_file << std::endl;
+    }
     
 };
 
-int main(){
+int main(int argc, char* argv[]){
     const unsigned int NSTEPS = 1000;       // Number of timesteps to simulate
-    const unsigned int NX = 100;           // Number of nodes in the x-direction
-    const double u_lid = 0.4;            // Lid velocity at the top boundary
+    const unsigned int NX = 128;           // Number of nodes in the x-direction
+    const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
-    const double L = 1.0;                // Length of the cavity
     const double rho = 1.0;             // Initial uniform density at the start
+    unsigned int ncores = omp_get_max_threads(); //Intialize the number of cores
+    if (argc > 1) {
+        ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
+    }
+    // Measure the start time
+    auto start_time = std::chrono::high_resolution_clock::now();
 
-    LBmethod lb(NSTEPS,NX,u_lid,Re,L,rho);
+    LBmethod lb(NSTEPS,NX,u_lid,Re,rho,ncores);
     lb.Initialize();
     lb.Run_simulation();
+    // Measure the end time
+    auto end_time = std::chrono::high_resolution_clock::now();
+    double total_time = std::chrono::duration<double>(end_time - start_time).count();
+
+    // Write computational details to CSV
+    std::string output_file = "simulation_time_details.csv";
+    std::ofstream file(output_file, std::ios::app); // Append mode
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open the output file." << std::endl;
+        return 1;
+    }
+
+    // Write header if file is empty
+    if (file.tellp() == 0) {
+        file << "Grid_Dimension,Number_of_Steps,Number_of_Cores,Total_Computation_Time(s)\n";
+    }
+
+    // Write details
+    file << NX << "x" << NX << "," << NSTEPS << "," << ncores << "," << total_time << "\n";
+
+    file.close();
+    
 
     std::cout << "Simulation completed. Use ffmpeg to generate a video:" << std::endl;
     std::cout << "ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4" << std::endl;
     return 0;
 }
-
