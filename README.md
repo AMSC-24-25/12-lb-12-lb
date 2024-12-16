@@ -7,9 +7,10 @@ The main goal is to write a library in order to exploit LBM method using the arg
 In order to run the code we need these lines: <br /> <br />
 cd code <br />
 chmod +x compile_and_run.sh <br />
-./compile_and_run.sh <br />
+./compile_and_run.sh <number_of_cores> <br />
 <br />
-the first one is just to move in the folder of the code while the second compile the file with all the information needed to compute the program and the third one run that file. 
+and sobstitute <number_of_cores> with the number of cores with which you want to run the program.
+The first one is just to move in the folder of the code while the second compile the file with all the information needed to compute the program and the third one run that file.  
 
 ## Overview
 The physical approch of this is based on the discretization of the 2D Boltzmann equation. <br />
