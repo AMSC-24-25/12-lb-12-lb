@@ -21,17 +21,19 @@ For the space discretizaion we used a common equispaced Grid in 2D: $\delta_x, \
 For the time discretization we used equispaced time with distance $\delta_t=\frac{\delta_x}{c_s}$ where $c_s$ is the lattice sound speed. All the equation in the code are arleady computed for $c_s=\frac{1}{\sqrt{3}}$
 
 ### Angle discretization
-In order to discretize the angle we followed the D2Q9 apporch that consider only 9 possible directions of the particles since the moving time step allows to move of only one square. <br />
-We have also added according to that model a weight specific of any direction: for the D2Q9 model 
-$$
-w_i = \begin{cases} 
-\frac{4}{9} & \text{if } i = 0 \\ 
-\frac{1}{9} & \text{if } i \in \{1, 2, 3, 4\} \\ 
-\frac{1}{36} & \text{if } i \in \{5, 6, 7, 8\} 
-\end{cases}
-$$
-The general approch is the DnQm where n is the number of dimensions and m is the number of speeds. <br />
-In order to use dimsension quantity like speed and position we need to convert them into lattice units so the height will become L->NY where NY is the number of points along y in the lattice. <br />
+
+In order to discretize the angle, we followed the D2Q9 approach that considers only 9 possible directions of the particles, since the moving time step allows movement of only one square. <br />
+We have also added, according to that model, a weight specific to each direction. For the D2Q9 model:
+
+$$ w_i = 
+\begin{cases} 
+\frac{4}{9}, & \text{if } i = 0; \\
+\frac{1}{9}, & \text{if } i \in \{1, 2, 3, 4\}; \\
+\frac{1}{36}, & \text{if } i \in \{5, 6, 7, 8\}.
+\end{cases} $$
+
+The general approach is the DnQm model, where `n` is the number of dimensions and `m` is the number of speeds. <br />
+In order to use dimensional quantities like speed and position, we need to convert them into lattice units. For example, the height will become `L -> NY`, where `NY` is the number of points along `y` in the lattice. <br />
 
 ## Physical interpretation and mathematical development
 
