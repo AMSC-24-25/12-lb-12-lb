@@ -14,10 +14,9 @@ int main() {
     const unsigned int NX = 5;           // Number of nodes in the x-direction
     const unsigned int NY = NX;           // Number of nodes in the y-direction (square domain)
     const unsigned int ndirections = 9;   // Number of directions (D2Q9 model has 9 directions)
-    const double u_lid = 1.0;            // Lid velocity at the top boundary
+    const double u_lid = 0.4;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
-    const double L = 1.0;                // Length of the cavity
-    const double nu = (u_lid * L) / Re;  // Kinematic viscosity calculated using Re
+    const double nu = (u_lid * NY) / Re;  // Kinematic viscosity calculated using Re
     const double tau = 3.0 * nu + 0.5;    // Relaxation time for BGK collision model
     const double rho0 = 1.0;             // Initial uniform density at the start
 
@@ -51,15 +50,16 @@ int main() {
     std::vector<double> rho(NX * NY, rho0); // Density initialized to rho0 everywhere
     std::vector<std::pair<double, double>> u(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
     std::vector<double> f_eq(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
+    std::vector<double> f(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
 
     //Print the density for debugging purposes
     std::cout << "Density:\n";
     // Set fixed width for values
     const int width = 12; // Adjust for number size
     std::cout << std::fixed << std::setprecision(6); // Fixed decimal precision
-    for (int y = NY - 1; y >= 0; --y) {
+    for (unsigned int y = 1; y <= NY; ++y) {
         for (unsigned int x = 0; x < NX; ++x) {
-            std::cout << std::setw(width) << rho[INDEX(x, y, NX)] << ", ";
+            std::cout << std::setw(width) << rho[INDEX(x, NY-y, NX)] << ", ";
         }
         std::cout << "\n";
     }
@@ -73,9 +73,9 @@ int main() {
     }
     //Print the velocity for debugging purposes
     std::cout << "Velocity:\n";
-    for (int y = NY - 1; y >= 0; --y) {
+    for (unsigned int y = 1; y <= NY; ++y) {
         for (unsigned int x = 0; x < NX; ++x) {
-             std::cout << "(" << std::setw(width) << u[INDEX(x, y, NX)].first << ", " << std::setw(width) << u[INDEX(x, y, NX)].second << ") ";
+            std::cout << "(" << std::setw(width) << u[INDEX(x, NY-y, NX)].first << ", " << std::setw(width) << u[INDEX(x, NY-y, NX)].second << ") ";
         }
         std::cout << "\n";
     }
@@ -127,12 +127,11 @@ int main() {
     }
     std::cout << "\n";
 
-    //define the actual distrubutin function: at start it is equal to f_eq
-    std::vector<double> f(NX * NY * ndirections, 0.0); // distribution function array
+    //define the actual distrubutin function: at start it is w
     for (unsigned int y = 0; y < NY; ++y) {
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int i=0;i<ndirections;++i){
-                f[INDEX3D(x,y,i,NX,ndirections)]=f_eq[INDEX3D(x,y,i,NX,ndirections)];
+                f[INDEX3D(x,y,i,NX,ndirections)]=weight[i];
             }
         }
     }
@@ -197,10 +196,12 @@ int main() {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int x = 0; x < NX; ++x) {
                 for (unsigned int i=0;i<ndirections;++i){
-                    int x_str = (x - direction[i].first + NX) % NX;
-                    int y_str = (y - direction[i].second + NY) % NY;
+                    int x_str = x - direction[i].first;
+                    int y_str = y - direction[i].second;
                     //apply straming function
-                    f_temp[INDEX3D(x, y, i, NX, ndirections)] = f[INDEX3D(x_str, y_str, i, NX, ndirections)];
+                    if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
+                        f_temp[INDEX3D(x,y,i,NX,ndirections)]=f[INDEX3D(x_str,y_str,i,NX,ndirections)];
+                    }
                 }
             }
         }
@@ -225,33 +226,40 @@ int main() {
         }
 
         //BC
-        std::vector<int> opposite = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //define a vector of opposite directions
-        // Bottom wall (no-slip)
-        for (int x = 0; x < NX; ++x) {
-            for (int i : {2, 5, 6}) { // Incoming from above
-                f_temp[INDEX3D(x, 0, i, NX, ndirections)] = f[INDEX3D(x, 0, opposite[i], NX, ndirections)];
+        std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //define a vector of opposite directions
+        //Sides + bottom angles
+        //Left and right //maybe can be merged
+        for (unsigned int y=0;y<NY;++y){
+            //Left
+            for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
+                f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+            }
+            //Right
+            for (unsigned int i : {1,5,8}){//directions: right, top right, top left
+                f_temp[INDEX3D(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX3D(NX-1,y,i,NX,ndirections)];
             }
         }
-        // Left wall (no-slip)
-        for (int y = 0; y < NY; ++y) {
-            for (int i : {1, 5, 8}) { // Incoming from right
-                f_temp[INDEX3D(0, y, i, NX, ndirections)] = f[INDEX3D(0, y, opposite[i], NX, ndirections)];
+        //Bottom
+        for (unsigned int x=0;x<NX;++x){
+            for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
+                f_temp[INDEX3D(x,0,opposites[i],NX,ndirections)]=f[INDEX3D(x,0,i,NX,ndirections)];
             }
         }
-        // Right wall (no-slip)
-        for (int y = 0; y < NY; ++y) {
-            for (int i : {3, 6, 7}) { // Incoming from left
-                f_temp[INDEX3D(NX-1, y, i, NX, ndirections)] = f[INDEX3D(NX-1, y, opposite[i], NX, ndirections)];
+        //Top
+        for (unsigned int x=0;x<NX;++x){
+            //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
+            double rho_local=0.0;
+            for (unsigned int i=0;i<ndirections;++i){
+                rho_local+=f[INDEX3D(x,NY-1,i,NX,ndirections)];
+            }
+            for (unsigned int i : {2,5,6}){//directions: up,top right, top left
+                //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
+                double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid);
+                f_temp[INDEX3D(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX3D(x,NY-1,i,NX,ndirections)] + deltaf;
             }
         }
-        // Top wall (moving lid)
-        for (int x = 0; x < NX; ++x) {
-            for (int i : {4, 7, 8}) { // Incoming from below
-                double delta_f = 6 * weight[i] * rho[INDEX(x,NY-1,NX)] * (direction[i].first * u_lid);
-                f_temp[INDEX3D(x, NY-1, i, NX, ndirections)] = f[INDEX3D(x, NY-1, opposite[i], NX, ndirections)] + delta_f;
-            }
-        }
-        std::swap(f, f_temp);//f_temp is f after BC so now we use the new function f_temp in f
+
+        std::swap(f, f_temp);//f_temp is f at t=t+1 so now we use the new function f_temp in f
 
         // Print the f values in the desired block matrix layout
         std::cout << "distribution f in block matrix form:\n";
@@ -273,33 +281,39 @@ int main() {
         }
 
         //Calculate the density and velocity
-        for (unsigned int y = 0; y < NY; ++y) {
-            for (unsigned int x = 0; x < NX; ++x) {
+        for (unsigned int x=0; x<NX; ++x){
+            for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
                 double rho_local = 0.0;
                 double ux_local = 0.0;
                 double uy_local = 0.0;
+
+                #pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double fi = f[INDEX3D(x, y, i, NX, ndirections)];
+                    const double fi=f[INDEX3D(x, y, i, NX, ndirections)];
                     rho_local += fi;
                     ux_local += fi * direction[i].first;
                     uy_local += fi * direction[i].second;
                 }
-
-                if (rho_local > 1e-10) {
+                if (rho_local<1e-10){
+                    rho[idx] = 0.0;
+                    ux_local = 0.0;
+                    uy_local = 0.0;
+                }
+                else {
+                    rho[idx] = rho_local;
                     ux_local /= rho_local;
                     uy_local /= rho_local;
                 }
-                rho[idx]=rho_local;
-                u[idx].first=ux_local;
-                u[idx].second=uy_local;
+                u[INDEX(x, y, NX)].first=ux_local;
+                u[INDEX(x, y, NX)].second=uy_local;
             }
         }
         //Print the density for debugging purposes
         std::cout << "Density:\n";
-        for (int y = NY - 1; y >= 0; --y) {
+        for (unsigned int y = 1; y <= NY; ++y) {
             for (unsigned int x = 0; x < NX; ++x) {
-                std::cout << std::setw(width) << rho[INDEX(x, y, NX)] << ", ";
+                std::cout << std::setw(width) << rho[INDEX(x, NY-y, NX)] << ", ";
             }
             std::cout << "\n";
         }
@@ -307,9 +321,9 @@ int main() {
 
         //Print the velocity for debugging purposes
         std::cout << "Velocity:\n";
-        for (int y = NY - 1; y >= 0; --y) {
+        for (unsigned int y = 1; y <= NY; ++y) {
             for (unsigned int x = 0; x < NX; ++x) {
-                std::cout << "(" << std::setw(width) << u[INDEX(x, y, NX)].first << ", " << std::setw(width) << u[INDEX(x, y, NX)].second << ") ";
+                std::cout << "(" << std::setw(width) << u[INDEX(x, NY-y, NX)].first << ", " << std::setw(width) << u[INDEX(x, NY-y, NX)].second << ") ";
             }
             std::cout << "\n";
         }
