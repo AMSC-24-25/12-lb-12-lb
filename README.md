@@ -2,6 +2,22 @@
 The main goal is to write a library in order to exploit LBM method using the arguments of the course AMSC
 
 ## Compiling
+In order not to have problems in the compilation we need to be sure that all the packets needed are correctly installed: <br /> 
+1. sudo apt update <br />
+2. sudo apt install pkg-config <br />
+3. sudo apt-get install libc6-dev-amd64 <br />
+4. sudo apt-get install libc6-dev <br />
+5. sudo apt-get install gcc-10 g++-10 <br />
+
+At this point we need to locate the file "opencv4.pc": <br />
+Type: dpkg -L libopencv-dev <br /><br />
+Now we need to re-configure the path through this command: <br />
+Type: export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> <br />
+Optional: to make this permanent add the following line: <br />
+echo 'export PKG_CONFIG_PATH=<insert/your/path>/pkgconfig:$PKG_CONFIG_PATH' >> ~/.bashrc     source ~/.bashrc <br /> <br />
+To check add the line: <br />
+pkg-config --modversion opencv4 <br />
+If we get something like "4.6.0", then we're okay.
 
 ## Runnning
 In order to run the code we need these lines: <br /> <br />
@@ -77,6 +93,11 @@ The streaming term is simply described by a variation in the space coordinate in
 From the calculation of the probability distribution function we can have all the macroscopic quantities such as density $\rho$ and velocity $\mathbf{u}$. In order to calculate them we use $\rho=\sum_i f_i$ and $\mathbf{u}=\frac{\sum_i f_i\mathbf{e_i}}{\rho}$
 
 ### Printing result and videomaking
+We have implemented the visualization part using the C-native library OpenCV in order to have fast performances. <br />
+We create 2 heatmaps in which the velocity magnitude and the density are shown at each time step. In particular we made sure to work with normalized matrices than converted into 8-bit images. Each frame is than saved in a subfolder. Regarding the OpenCV::Mat function we noticed that it uses a row-major indexing, so, in order to have more easily readable images we need to flip the images along the x axis. <br />
+When the simulation is completed, a last line in the code creates the animation of it, assembling all saved frames. <br /> <br />
+We implemented also some codes for the static and dynamic visualization on python, whose read the .csv output files. However we noticed that the compilation time gets way more long, so we've preferred to include in the overall default code only the C++ visualization 
+
 
 ## Key feature
 ### Lid velocity considerations
