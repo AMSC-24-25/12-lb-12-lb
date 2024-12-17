@@ -25,7 +25,7 @@ cd code <br />
 chmod +x compile_and_run.sh <br />
 ./compile_and_run.sh <number_of_cores> <br />
 <br />
-and sobstitute <number_of_cores> with the number of cores with which you want to run the program.
+and sobstitute <number_of_cores> with the number of cores with which you want to run the program. If you don't insert it it will simply run with the maximum number of threads in your pc
 The first one is just to move in the folder of the code while the second compile the file with all the information needed to compute the program and the third one run that file.  
 
 ## Overview
