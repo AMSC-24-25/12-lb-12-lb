@@ -461,9 +461,7 @@ class LBmethod{
 
         for (unsigned int y = 0; y < NY; ++y) {
             size_t idx = INDEX(x_c, NY-y, NX);
-            double ux = u[idx].first;
-            double uy = u[idx].second;
-            double velocity_magnitude = std::sqrt(ux * ux + uy * uy)/u_lid;
+            double velocity_magnitude = u[idx].second/u_lid;
 
             file << NY-y << "," << velocity_magnitude << "\n";
         }
@@ -474,9 +472,7 @@ class LBmethod{
 
         for (unsigned int x = 0; x < NX; ++x) {
             size_t idx = INDEX(NX-x, y_c, NX);
-            double ux = u[idx].first;
-            double uy = u[idx].second;
-            double velocity_magnitude = std::sqrt(ux * ux + uy * uy)/u_lid;
+            double velocity_magnitude = u[idx].first/u_lid;
 
             file << NX-x << "," << velocity_magnitude << "\n";
         }
