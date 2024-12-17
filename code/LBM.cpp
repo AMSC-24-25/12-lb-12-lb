@@ -1,4 +1,4 @@
-#include "LBM.h"
+#include "LBM.hpp"
 #include <cmath>
 #include <omp.h>
 #include <opencv2/imgproc.hpp>
