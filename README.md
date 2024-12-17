@@ -74,7 +74,7 @@ THe collision term is a simple result of the BGK approch explained above so we r
 The streaming term is simply described by a variation in the space coordinate in time: $f_i(\mathbf{x}+\mathbf{e_i}\delta_t,t+delta_t)=f_i(\mathbf{x},t)$. ABout the boundry condition the idea is to invert the direction of the particles that are flowing outside so we consider the particles at the borders that are going outside and we simply reflect their direction. For instance if we take a particle that has $\mathbf{x}=(NX-1,y)$ with direction right we impose that after this step it will have diretion left and will be again in the cell $\mathbf{x}=(NX-1,y)$. 
 
 ### Calculation of macroscopic quantities
-From the calculation of the probability distribution function we can have all the macroscopic quantities such as density $\rho$ and velocity $\mathbf{u}$. In order to calculate them we use $\rho=\sum_i f_i$ and $\mathbf{u}=\frac{sum_i f_i\mathbf{e_i}}{\rho}
+From the calculation of the probability distribution function we can have all the macroscopic quantities such as density $\rho$ and velocity $\mathbf{u}$. In order to calculate them we use $\rho=\sum_i f_i$ and $\mathbf{u}=\frac{\sum_i f_i\mathbf{e_i}}{\rho}$
 
 ### Printing result and videomaking
 
