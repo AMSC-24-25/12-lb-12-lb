@@ -513,11 +513,11 @@ int main(int argc, char* argv[]){
 
     // Write header if file is empty
     if (file.tellp() == 0) {
-        file << "Grid_Dimension,Number_of_Steps,Total_Computation_Time(s)\n";
+        file << "Grid_Dimension,Number_of_Steps,Number_of_Cores,Total_Computation_Time(s)\n";
     }
 
     // Write details
-    file << NX << "x" << NX << "," << NSTEPS << "," << total_time << "\n";
+    file << NX << "x" << NX << "," << NSTEPS << ",1," << total_time << "\n";
 
     file.close();
     
