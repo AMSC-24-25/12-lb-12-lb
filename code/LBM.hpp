@@ -10,8 +10,15 @@
 
 namespace fs = std::filesystem;
 
-#define INDEX(x, y, NX) ((x) + (NX) * (y)) // Convert 2D indices (x, y) into 1D index
-#define INDEX3D(x, y, i, NX, ndirections) ((i) + (ndirections) * ((x) + (NX) * (y)))
+// Overloaded function for 2D to 1D indexing
+inline int INDEX(int x, int y, int NX) {
+    return x + NX * y;
+}
+
+// Overloaded function for 3D to 1D indexing
+inline int INDEX(int x, int y, int i, int NX, int ndirections) {
+    return i + ndirections * (x + NX * y);
+}
 
 class LBmethod {
 private:
