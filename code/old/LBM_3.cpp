@@ -511,10 +511,8 @@ int main(int argc, char* argv[]){
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double rho = 1.0;             // Initial uniform density at the start
-    unsigned int ncores = omp_get_max_threads(); //Intialize the number of cores
-    if (argc > 1) {
-        ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
-    }
+    unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
+
     // Measure the start time
     auto start_time = std::chrono::high_resolution_clock::now();
 
