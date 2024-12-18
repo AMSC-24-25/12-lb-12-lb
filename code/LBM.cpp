@@ -65,7 +65,8 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-     #pragma omp collapse(2) for schedule(static) private(rho_local, ux_local, uy_local)
+
+     #pragma omp for collapse(2) schedule(static)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
@@ -115,7 +116,7 @@ void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
     //paralleliation only in the bulk streaming
     //Avoid at boundaries to prevent race conditions
-    #pragma omp collapse(2) for schedule(static)
+    #pragma omp for collapse(2) schedule(static)
     for (unsigned int x=0;x<NX;++x){
         for (unsigned int y=0;y<NY;++y){
             for (unsigned int i=0;i<ndirections;++i){
@@ -223,7 +224,7 @@ void LBmethod::Visualization(unsigned int t) {
         }
 
         // Fill matrices with new data
-        #pragma omp parallel for for collapse(2) schedule(static)
+        #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
