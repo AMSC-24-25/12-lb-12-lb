@@ -66,7 +66,7 @@ void LBmethod::Equilibrium() {
 
 void LBmethod::UpdateMacro() {
 
-     #pragma omp for collapse(2) schedule(static)
+     #pragma omp for collapse(2) schedule(static) private(rho_local, ux_local, uy_local)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
@@ -246,11 +246,7 @@ void LBmethod::Visualization(unsigned int t) {
         //Flip the image vertically (OpenCV works in the opposite way than our code)
         cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
 
-        if(NSTEPS<=300){
-            // Display the updated frame in a window
-            cv::imshow("Velocity", velocity_heatmap);
-            cv::waitKey(1); // 1 ms delay for real-time visualization
-        }
+    
         
         // Save the current frame to a file
         std::string filename = "frames/frame_" + std::to_string(t) + ".png";
