@@ -65,15 +65,15 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-     #pragma omp for collapse(2) schedule(static) private(rho_local, ux_local, uy_local)
+     #pragma omp parallel for schedule(static)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                rho_local = 0.0;
-                ux_local = 0.0;
-                uy_local = 0.0;
-
+                double rho_local = 0.0;
+                double ux_local = 0.0;
+                double uy_local = 0.0;
+                
                 #pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
