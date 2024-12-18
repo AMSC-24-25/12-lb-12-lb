@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double rho = 1.0;             // Initial uniform density at the start
-    unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
+    const unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
 
     auto start_time = std::chrono::high_resolution_clock::now();
