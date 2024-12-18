@@ -8,16 +8,9 @@
 
 // Constructor
 LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsigned int NY,  const double u_lid, const double Re, const double rho0, const unsigned int num_cores)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), u_lid(u_lid), Re(Re), rho0(rho0), num_cores(num_cores), nu((u_lid * NY) / Re), tau(3.0 * nu + 0.5),
-      direction({std::make_pair(0, 0),   //Rest direction
-                 std::make_pair(1, 0),   //Right
-                 std::make_pair(0, 1),   //Up
-                 std::make_pair(-1, 0),  //Left
-                 std::make_pair(0, -1),  //Down
-                 std::make_pair(1, 1),   //Top-right diagonal
-                 std::make_pair(-1, 1),  //Top-left diagonal
-                 std::make_pair(-1, -1), //Bottom-left diagonal
-                 std::make_pair(1, -1)}),//Bottom-right diagonal
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), u_lid(u_lid), Re(Re), rho0(rho0), num_cores(num_cores), nu((u_lid * NY) / Re), tau(3.0 * nu + 0.5), 
+      directionx({0,1,0,-1,0,1,-1,-1,1}),
+      directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
                 1.0 / 9.0,
                 1.0 / 9.0, 
@@ -32,12 +25,13 @@ LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsign
 void LBmethod::Initialize() {
     //Vectors to store simulation data:
     rho.assign(NX * NY, rho0); // Density initialized to rho0 everywhere
-    u.assign(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
+    ux.assign(NX * NY, 0.0); // Velocity initialized to 0
+    uy.assign(NX * NY, 0.0); // Velocity initialized to 0
     f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp.assign(NX * NY * ndirections, 0.0);
 
-    #pragma omp parallel for
+    #pragma omp parallel for collapse(2) schedule(static)
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
@@ -54,18 +48,14 @@ void LBmethod::Equilibrium() {
         //collapse(2) combines the 2 loops into a single iteration space-> convient when I have large Nx and Ny (not when they're really different tho)
         //static ensure uniform distribution
         //I don't do collapse(3) because the inner loop is light
-        #pragma omp parallel for schedule(static)
+        #pragma omp for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
-                const double ux = u[idx].first; // Horizontal velocity at point (x, y)
-                const double uy = u[idx].second; // Vertical velocity at point (x, y)
-                const double u2 = ux * ux + uy * uy; // Square of the speed magnitude
+                const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double cx = direction[i].first; // x-component of direction vector
-                    const double cy = direction[i].second; // y-component of direction vector
-                    const double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
+                    const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
                     f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
@@ -75,7 +65,7 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-    #pragma omp for schedule(static) private(rho_local, ux_local, uy_local)
+    #pragma omp for collapse(2) schedule(static) private(rho_local, ux_local, uy_local)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
@@ -84,8 +74,8 @@ void LBmethod::UpdateMacro() {
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
                     rho_local += fi;
-                    ux_local += fi * direction[i].first;
-                    uy_local += fi * direction[i].second;
+                    ux_local += fi * directionx[i];
+                    uy_local += fi * directiony[i];
                 }
                 if (rho_local<1e-10){
                     rho[idx] = 0.0;
@@ -97,15 +87,15 @@ void LBmethod::UpdateMacro() {
                     ux_local /= rho_local;
                     uy_local /= rho_local;
                 }
-                u[idx].first=ux_local;
-                u[idx].second=uy_local;
+                ux[idx]=ux_local;
+                uy[idx]=uy_local;
             }
         }
         Equilibrium();
 }
 
 void LBmethod::Collisions() {
-    #pragma omp for schedule(static)
+    #pragma omp for collapse(2) schedule(static)
         //we use f=f-(f-f_eq)/tau from BGK
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
@@ -123,13 +113,13 @@ void LBmethod::Streaming() {
 
         //paralleliation only in the bulk streaming
         //Avoid at boundaries to prevent race conditions
-        #pragma omp for schedule(static)
+        #pragma omp for collapse(2) schedule(static)
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
 
-                    const int x_str = x - direction[i].first;
-                    const int y_str = y - direction[i].second;
+                    const int x_str = x - directionx[i];
+                    const int y_str = y - directiony[i];
                     //streaming process
                     if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
                         f_temp[INDEX(x,y,i,NX,ndirections)]=f[INDEX(x_str,y_str,i,NX,ndirections)];
@@ -168,7 +158,7 @@ void LBmethod::Streaming() {
                 }
                 for (unsigned int i : {2,5,6}){//directions: up,top right, top left
                     //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-                    const double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
+                    const double deltaf=-6.0*weight[i]*rho_local*(directionx[i] * u_lid_dyn);
                     f_temp[INDEX(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX(x,NY-1,i,NX,ndirections)] + deltaf;
                 }
             }
@@ -208,65 +198,54 @@ void LBmethod::Run_simulation() {
 }
 
 void LBmethod::Visualization(unsigned int t) {
-        static cv::Mat velocity_magn_mat, density_mat;
-        static cv::Mat velocity_magn_norm, density_norm;
-        static cv::Mat velocity_heatmap, density_heatmap;
+        static cv::Mat velocity_magn_mat;
+        static cv::Mat velocity_magn_norm;
+        static cv::Mat velocity_heatmap;
 
         // Initialize only when t == 0
         if (t == 0) {
         // Initialize the heatmaps with the same size as the grid
             //OpenCV uses a row-major indexing
             velocity_magn_mat = cv::Mat(NY, NX, CV_32F);
-            density_mat = cv::Mat(NY, NX, CV_32F);
         
             // Create matrices for normalized values
             velocity_magn_norm = cv::Mat(NY, NX, CV_32F);
-            density_norm = cv::Mat(NY, NX, CV_32F);
 
             // Create heatmap images (8 bit images)
             velocity_heatmap = cv::Mat(NY, NX, CV_8UC3);
-            density_heatmap = cv::Mat(NY, NX, CV_8UC3);
         }
 
         // Fill matrices with new data
-        #pragma omp parallel for
+        #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
-                double ux = u[idx].first;
-                double uy = u[idx].second;
-                velocity_magn_mat.at<float>(y, x) = ux * ux + uy * uy;
-                density_mat.at<float>(y, x) = static_cast<float>(rho[idx]);
+                ux_local = ux[idx];
+                uy_local = uy[idx];
+                velocity_magn_mat.at<float>(y, x) = ux_local * ux_local + uy_local * uy_local;
             }
         }
 
         // Normalize the matrices to 0-255 for display
         cv::normalize(velocity_magn_mat, velocity_magn_norm, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(density_mat, density_norm, 0, 255, cv::NORM_MINMAX);
+        
 
         //8-bit images
         velocity_magn_norm.convertTo(velocity_magn_norm, CV_8U);
-        density_norm.convertTo(density_norm, CV_8U);
 
         // Apply color maps
         cv::applyColorMap(velocity_magn_norm, velocity_heatmap, cv::COLORMAP_PLASMA);
-        cv::applyColorMap(density_norm, density_heatmap, cv::COLORMAP_VIRIDIS);
 
         //Flip the image vertically (OpenCV works in the opposite way than our code)
         cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
-        cv::flip(density_heatmap, density_heatmap, 0);
-
-        // Combine both heatmaps horizontally
-        cv::Mat combined;
-        cv::hconcat(velocity_heatmap, density_heatmap, combined);
 
         if(NSTEPS<=300){
             // Display the updated frame in a window
-            cv::imshow("Velocity (Left) and Density (Right)", combined);
+            cv::imshow("Velocity HeatMap",velocity_heatmap);
             cv::waitKey(1); // 1 ms delay for real-time visualization
         }
         
         // Save the current frame to a file
         std::string filename = "frames/frame_" + std::to_string(t) + ".png";
-        cv::imwrite(filename, combined);
+        cv::imwrite(filename,velocity_heatmap);
 }
