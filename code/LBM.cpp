@@ -65,7 +65,7 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-     #pragma omp parallel for schedule(static)
+     #pragma omp collapse(2) for schedule(static) private(rho_local, ux_local, uy_local)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
@@ -74,7 +74,7 @@ void LBmethod::UpdateMacro() {
                 double ux_local = 0.0;
                 double uy_local = 0.0;
                 
-                #pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
+                //#pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
                     rho_local += fi;
@@ -115,7 +115,7 @@ void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
     //paralleliation only in the bulk streaming
     //Avoid at boundaries to prevent race conditions
-    #pragma omp parallel for schedule(static)
+    #pragma omp collapse(2) for schedule(static)
     for (unsigned int x=0;x<NX;++x){
         for (unsigned int y=0;y<NY;++y){
             for (unsigned int i=0;i<ndirections;++i){
@@ -194,9 +194,12 @@ void LBmethod::Run_simulation() {
                 u_lid_dyn = u_lid;
             }
             
-            Collisions();
-            Streaming();
-            UpdateMacro();
+            #pragma omp parallel
+            {
+                Collisions();
+                Streaming();
+                UpdateMacro();
+            }
             Visualization(t);
         }
 }
@@ -205,6 +208,8 @@ void LBmethod::Visualization(unsigned int t) {
         static cv::Mat velocity_magn_mat;
         static cv::Mat velocity_magn_norm;
         static cv::Mat velocity_heatmap;
+        ux_local = 0.0;
+        uy_local = 0.0;
 
         // Initialize only when t == 0
         if (t == 0) {
@@ -220,7 +225,7 @@ void LBmethod::Visualization(unsigned int t) {
         }
 
         // Fill matrices with new data
-        #pragma omp parallel for
+        #pragma omp parallel for for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
