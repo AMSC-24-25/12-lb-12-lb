@@ -15,8 +15,7 @@ dpkg -L libopencv-dev <br /><br />
 Now we need to re-configure the path through this command: <br />
 export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> 
 You should type something like: <br />
-export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pk
-gconfig:$PKG_CONFIG_PATH <br /> <br />
+export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH <br /> <br />
 
 To check add the line: <br />
 pkg-config --modversion opencv4 <br />
