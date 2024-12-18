@@ -3,9 +3,8 @@
 #include <omp.h>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
-#include <fstream>
 #include <iostream>
-#include <chrono>
+
 
 // Constructor
 LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsigned int NY,  const double u_lid, const double Re, const double rho0, const unsigned int num_cores)
