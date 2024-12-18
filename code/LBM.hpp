@@ -19,6 +19,7 @@ inline int INDEX(int x, int y, int NX) {
 inline int INDEX(int x, int y, int i, int NX, int ndirections) {
     return i + ndirections * (x + NX * y);
 }
+
 class LBmethod {
 private:
     // Parameters
@@ -53,7 +54,6 @@ private:
     double rho_local = 0.0;
     double ux_local = 0.0;
     double uy_local = 0.0;
-
 public:
     // Constructor
     LBmethod(const unsigned int NSTEPS, const unsigned int NX, const unsigned int NY, const double u_lid, const double Re, const double rho0, const unsigned int num_cores);
@@ -69,4 +69,3 @@ public:
 };
 
 #endif // LBMETHOD_H
-
