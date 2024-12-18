@@ -51,9 +51,6 @@ private:
     std::vector<double> f;
     std::vector<double> f_temp;
 
-    double rho_local = 0.0;
-    double ux_local = 0.0;
-    double uy_local = 0.0;
 public:
     // Constructor
     LBmethod(const unsigned int NSTEPS, const unsigned int NX, const unsigned int NY, const double u_lid, const double Re, const double rho0, const unsigned int num_cores);
