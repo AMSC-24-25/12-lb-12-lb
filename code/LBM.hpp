@@ -38,12 +38,14 @@ private:
     const double sigma = 10.0;
 
     // Directions and weights for D2Q9
-    const std::array<std::pair<int, int>, 9> direction;
+    const std::array<int, 9> directionx;
+    const std::array<int, 9> directiony;
     const std::array<double, 9> weight;
 
     // Simulation data
     std::vector<double> rho;
-    std::vector<std::pair<double, double>> u;
+    std::vector<double> ux;
+    std::vector<double> uy;
     std::vector<double> f_eq;
     std::vector<double> f;
     std::vector<double> f_temp;
