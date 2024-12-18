@@ -41,8 +41,9 @@ void LBmethod::Initialize() {
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
-                f[INDEX3D(x, y, i, NX, ndirections)] = weight[i];
-                f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i];
+                size_t idx=INDEX(x, y, i, NX, ndirections);
+                f[idx] = weight[i];
+                f_eq[idx] = weight[i];
             }
         }
     }
@@ -57,17 +58,17 @@ void LBmethod::Equilibrium() {
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
-                double ux = u[idx].first; // Horizontal velocity at point (x, y)
-                double uy = u[idx].second; // Vertical velocity at point (x, y)
-                double u2 = ux * ux + uy * uy; // Square of the speed magnitude
+                const double ux = u[idx].first; // Horizontal velocity at point (x, y)
+                const double uy = u[idx].second; // Vertical velocity at point (x, y)
+                const double u2 = ux * ux + uy * uy; // Square of the speed magnitude
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    double cx = direction[i].first; // x-component of direction vector
-                    double cy = direction[i].second; // y-component of direction vector
-                    double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
+                    const double cx = direction[i].first; // x-component of direction vector
+                    const double cy = direction[i].second; // y-component of direction vector
+                    const double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
-                    f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+                    f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
                 }
             }
         }
@@ -81,7 +82,7 @@ void LBmethod::UpdateMacro() {
                 size_t idx = INDEX(x, y, NX);
                 
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double fi=f[INDEX3D(x, y, i, NX, ndirections)];
+                    const double fi=f[INDEX(x, y, i, NX, ndirections)];
                     rho_local += fi;
                     ux_local += fi * direction[i].first;
                     uy_local += fi * direction[i].second;
@@ -96,8 +97,8 @@ void LBmethod::UpdateMacro() {
                     ux_local /= rho_local;
                     uy_local /= rho_local;
                 }
-                u[INDEX(x, y, NX)].first=ux_local;
-                u[INDEX(x, y, NX)].second=uy_local;
+                u[idx].first=ux_local;
+                u[idx].second=uy_local;
             }
         }
         Equilibrium();
@@ -109,7 +110,8 @@ void LBmethod::Collisions() {
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
-                    f[INDEX3D(x, y, i, NX, ndirections)]=f[INDEX3D(x, y, i, NX, ndirections)]-(f[INDEX3D(x, y, i, NX, ndirections)]-f_eq[INDEX3D(x, y, i, NX, ndirections)])/tau;
+                    size_t idx=INDEX(x, y, i, NX, ndirections);
+                    f[idx]=f[idx]-(f[idx]-f_eq[idx])/tau;
                 }
             }
         }
@@ -126,11 +128,11 @@ void LBmethod::Streaming() {
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
 
-                    int x_str = x - direction[i].first;
-                    int y_str = y - direction[i].second;
+                    const int x_str = x - direction[i].first;
+                    const int y_str = y - direction[i].second;
                     //streaming process
                     if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
-                        f_temp[INDEX3D(x,y,i,NX,ndirections)]=f[INDEX3D(x_str,y_str,i,NX,ndirections)];
+                        f_temp[INDEX(x,y,i,NX,ndirections)]=f[INDEX(x_str,y_str,i,NX,ndirections)];
                     }
                 }
             }
@@ -144,17 +146,17 @@ void LBmethod::Streaming() {
             for (unsigned int y=0;y<NY;++y){
                 //Left
                 for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
-                    f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+                    f_temp[INDEX(0,y,opposites[i],NX,ndirections)]=f[INDEX(0,y,i,NX,ndirections)];
                 }
                 //Right
                 for (unsigned int i : {1,5,8}){//directions: right, top right, top left
-                    f_temp[INDEX3D(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX3D(NX-1,y,i,NX,ndirections)];
+                    f_temp[INDEX(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX(NX-1,y,i,NX,ndirections)];
                 }
             }
             //Bottom
             for (unsigned int x=0;x<NX;++x){
                 for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
-                    f_temp[INDEX3D(x,0,opposites[i],NX,ndirections)]=f[INDEX3D(x,0,i,NX,ndirections)];
+                    f_temp[INDEX(x,0,opposites[i],NX,ndirections)]=f[INDEX(x,0,i,NX,ndirections)];
                 }
             }
             //Top
@@ -162,12 +164,12 @@ void LBmethod::Streaming() {
                 //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
                 double rho_local=0.0;
                 for (unsigned int i=0;i<ndirections;++i){
-                    rho_local+=f[INDEX3D(x,NY-1,i,NX,ndirections)];
+                    rho_local+=f[INDEX(x,NY-1,i,NX,ndirections)];
                 }
                 for (unsigned int i : {2,5,6}){//directions: up,top right, top left
                     //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-                    double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
-                    f_temp[INDEX3D(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX3D(x,NY-1,i,NX,ndirections)] + deltaf;
+                    const double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
+                    f_temp[INDEX(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX(x,NY-1,i,NX,ndirections)] + deltaf;
                 }
             }
         }
