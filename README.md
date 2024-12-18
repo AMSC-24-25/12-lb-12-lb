@@ -10,10 +10,11 @@ In order not to have problems in the compilation we need to be sure that all the
 5. sudo apt-get install gcc-10 g++-10 <br />
 
 At this point we need to locate the file "opencv4.pc": <br />
-Type: dpkg -L libopencv-dev <br /><br />
+dpkg -L libopencv-dev <br /><br />
 Now we need to re-configure the path through this command: <br />
-Type: export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> 
-(You should type something like: export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pk
+export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> 
+You should type something like: <br />
+export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pk
 gconfig:$PKG_CONFIG_PATH <br /> <br />
 
 To check add the line: <br />
