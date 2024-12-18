@@ -220,7 +220,7 @@ void LBmethod::Visualization(unsigned int t) {
         }
 
         // Fill matrices with new data
-         #pragma omp parallel for collapse(2) schedule(static)
+        #pragma omp parallel for
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
