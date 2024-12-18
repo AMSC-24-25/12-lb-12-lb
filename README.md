@@ -5,16 +5,17 @@ The main goal is to write a library in order to exploit LBM method using the arg
 In order not to have problems in the compilation we need to be sure that all the packets needed are correctly installed: <br /> 
 1. sudo apt update <br />
 2. sudo apt install pkg-config <br />
-3. sudo apt-get install libc6-dev-amd64 <br />
-4. sudo apt-get install libc6-dev <br />
+3. sudo apt-get install libopencv-dev <br />
+4. sudo apt-get install libc6-dev
 5. sudo apt-get install gcc-10 g++-10 <br />
 
 At this point we need to locate the file "opencv4.pc": <br />
 Type: dpkg -L libopencv-dev <br /><br />
 Now we need to re-configure the path through this command: <br />
-Type: export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> <br />
-Optional: to make this permanent add the following line: <br />
-echo 'export PKG_CONFIG_PATH=<insert/your/path>/pkgconfig:$PKG_CONFIG_PATH' >> ~/.bashrc     source ~/.bashrc <br /> <br />
+Type: export PKG_CONFIG_PATH=<insert/your/path/>/pkgconfig:$PKG_CONFIG_PATH <br /> 
+(You should type something like: export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pk
+gconfig:$PKG_CONFIG_PATH <br /> <br />
+
 To check add the line: <br />
 pkg-config --modversion opencv4 <br />
 If we get something like "4.6.0", then we're okay.
