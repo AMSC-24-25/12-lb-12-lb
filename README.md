@@ -8,6 +8,7 @@ In order not to have problems in the compilation we need to be sure that all the
 3. sudo apt-get install libopencv-dev <br />
 4. sudo apt-get install libc6-dev
 5. sudo apt-get install gcc-10 g++-10 <br />
+6. sudo apt install ffmpeg <br />
 
 At this point we need to locate the file "opencv4.pc": <br />
 dpkg -L libopencv-dev <br /><br />
