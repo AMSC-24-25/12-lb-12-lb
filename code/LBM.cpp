@@ -208,8 +208,6 @@ void LBmethod::Visualization(unsigned int t) {
         static cv::Mat velocity_magn_mat;
         static cv::Mat velocity_magn_norm;
         static cv::Mat velocity_heatmap;
-        ux_local = 0.0;
-        uy_local = 0.0;
 
         // Initialize only when t == 0
         if (t == 0) {
