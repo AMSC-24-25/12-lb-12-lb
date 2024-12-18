@@ -5,7 +5,7 @@
 
 int main(int argc, char* argv[]) {
     const unsigned int NSTEPS = 1000;       // Number of timesteps to simulate
-    const unsigned int NX = 128;           // Number of nodes in the x-direction
+    const unsigned int NX = 512;           // Number of nodes in the x-direction
     const unsigned int NY = NX;           // Number of nodes in the y-direction
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
@@ -40,8 +40,5 @@ int main(int argc, char* argv[]) {
 
     file.close();
     
-
-    std::cout << "Simulation completed. Use ffmpeg to generate a video:" << std::endl;
-    std::cout << "ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4" << std::endl;
     return 0;
 }
