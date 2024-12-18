@@ -135,19 +135,22 @@ void LBmethod::Streaming() {
         {
             for (unsigned int y=0;y<NY;++y){
                 //Left
-                for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
-                    f_temp[INDEX(0,y,opposites[i],NX,ndirections)]=f[INDEX(0,y,i,NX,ndirections)];
-                }
+                //directions: left, top left, bottom left
+                f_temp[INDEX(0,y,1,NX,ndirections)]=f[INDEX(0,y,3,NX,ndirections)];
+                f_temp[INDEX(0,y,8,NX,ndirections)]=f[INDEX(0,y,6,NX,ndirections)];
+                f_temp[INDEX(0,y,5,NX,ndirections)]=f[INDEX(0,y,7,NX,ndirections)];
                 //Right
-                for (unsigned int i : {1,5,8}){//directions: right, top right, top left
-                    f_temp[INDEX(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX(NX-1,y,i,NX,ndirections)];
-                }
+                //directions: right, top right, top left
+                f_temp[INDEX(NX-1,y,3,NX,ndirections)]=f[INDEX(NX-1,y,1,NX,ndirections)];
+                f_temp[INDEX(NX-1,y,7,NX,ndirections)]=f[INDEX(NX-1,y,5,NX,ndirections)];
+                f_temp[INDEX(NX-1,y,6,NX,ndirections)]=f[INDEX(NX-1,y,8,NX,ndirections)];
             }
             //Bottom
             for (unsigned int x=0;x<NX;++x){
-                for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
-                    f_temp[INDEX(x,0,opposites[i],NX,ndirections)]=f[INDEX(x,0,i,NX,ndirections)];
-                }
+                //directions: bottom, bottom left, bottom right
+                f_temp[INDEX(x,0,2,NX,ndirections)]=f[INDEX(x,0,4,NX,ndirections)];
+                f_temp[INDEX(x,0,5,NX,ndirections)]=f[INDEX(x,0,7,NX,ndirections)];
+                f_temp[INDEX(x,0,6,NX,ndirections)]=f[INDEX(x,0,8,NX,ndirections)];
             }
             //Top
             for (unsigned int x=0;x<NX;++x){
@@ -156,11 +159,15 @@ void LBmethod::Streaming() {
                 for (unsigned int i=0;i<ndirections;++i){
                     rho_local+=f[INDEX(x,NY-1,i,NX,ndirections)];
                 }
-                for (unsigned int i : {2,5,6}){//directions: up,top right, top left
-                    //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-                    const double deltaf=-6.0*weight[i]*rho_local*(directionx[i] * u_lid_dyn);
-                    f_temp[INDEX(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX(x,NY-1,i,NX,ndirections)] + deltaf;
-                }
+                //directions: up,top right, top left
+                //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
+                const double deltaf2=-6.0*weight[2]*rho_local*(directionx[2]*u_lid_dyn);
+                const double deltaf5=-6.0*weight[5]*rho_local*(directionx[5]*u_lid_dyn);
+                const double deltaf6=-6.0*weight[6]*rho_local*(directionx[6]*u_lid_dyn);
+
+                f_temp[INDEX(x, NY-1, 4, NX, ndirections)] = f[INDEX(x,NY-1,2,NX,ndirections)] + deltaf2;
+                f_temp[INDEX(x, NY-1, 7, NX, ndirections)] = f[INDEX(x,NY-1,5,NX,ndirections)] + deltaf5;
+                f_temp[INDEX(x, NY-1, 8, NX, ndirections)] = f[INDEX(x,NY-1,6,NX,ndirections)] + deltaf6;
             }
         }
 
