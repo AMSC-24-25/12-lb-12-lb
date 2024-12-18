@@ -35,7 +35,7 @@ void LBmethod::Initialize() {
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
-                size_t idx=INDEX(x, y, i, NX, ndirections);
+                const size_t idx=INDEX(x, y, i, NX, ndirections);
                 f[idx] = weight[i];
                 f_eq[idx] = weight[i];
             }
@@ -51,7 +51,7 @@ void LBmethod::Equilibrium() {
         #pragma omp for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
-                size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
+                const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
                 const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
@@ -69,7 +69,7 @@ void LBmethod::UpdateMacro() {
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
-                size_t idx = INDEX(x, y, NX);
+                const size_t idx = INDEX(x, y, NX);
                 
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
@@ -100,7 +100,7 @@ void LBmethod::Collisions() {
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
-                    size_t idx=INDEX(x, y, i, NX, ndirections);
+                    const size_t idx=INDEX(x, y, i, NX, ndirections);
                     f[idx]=f[idx]-(f[idx]-f_eq[idx])/tau;
                 }
             }
@@ -226,7 +226,7 @@ void LBmethod::Visualization(unsigned int t) {
         #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
-                size_t idx = INDEX(x, y, NX);
+                const size_t idx = INDEX(x, y, NX);
                 ux_local = ux[idx];
                 uy_local = uy[idx];
                 velocity_magn_mat.at<float>(y, x) = ux_local * ux_local + uy_local * uy_local;
