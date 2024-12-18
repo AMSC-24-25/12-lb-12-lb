@@ -4,8 +4,8 @@
 #include <fstream>
 
 int main(int argc, char* argv[]) {
-    const unsigned int NSTEPS = 1000;       // Number of timesteps to simulate
-    const unsigned int NX = 512;           // Number of nodes in the x-direction
+    const unsigned int NSTEPS = 100;       // Number of timesteps to simulate
+    const unsigned int NX = 100;           // Number of nodes in the x-direction
     const unsigned int NY = NX;           // Number of nodes in the y-direction
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
