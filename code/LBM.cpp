@@ -36,14 +36,14 @@ void LBmethod::Initialize() {
     u.assign(NX * NY, {0.0, 0.0}); // Velocity initialized to 0
     f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
+    f_temp.assign(NX * NY * ndirections, 0.0);
 
     #pragma omp parallel for
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
-                size_t idx=INDEX(x, y, i, NX, ndirections);
-                f[idx] = weight[i];
-                f_eq[idx] = weight[i];
+                f[INDEX3D(x, y, i, NX, ndirections)] = weight[i];
+                f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i];
             }
         }
     }
@@ -68,25 +68,21 @@ void LBmethod::Equilibrium() {
                     double cu = (cx * ux + cy * uy); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
-                    f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+                    f_eq[INDEX3D(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
                 }
             }
         }
 }
 
 void LBmethod::UpdateMacro() {
-    #pragma omp parallel for schedule(static)
+    #pragma omp for schedule(static) private(rho_local, ux_local, uy_local)
         //or schedule(dynamic, chunk_size) if the computational complexity varies
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
                 size_t idx = INDEX(x, y, NX);
-                double rho_local = 0.0;
-                double ux_local = 0.0;
-                double uy_local = 0.0;
-
-                #pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
+                
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double fi=f[INDEX(x, y, i, NX, ndirections)];
+                    const double fi=f[INDEX3D(x, y, i, NX, ndirections)];
                     rho_local += fi;
                     ux_local += fi * direction[i].first;
                     uy_local += fi * direction[i].second;
@@ -101,21 +97,20 @@ void LBmethod::UpdateMacro() {
                     ux_local /= rho_local;
                     uy_local /= rho_local;
                 }
-                u[idx].first=ux_local;
-                u[idx].second=uy_local;
+                u[INDEX(x, y, NX)].first=ux_local;
+                u[INDEX(x, y, NX)].second=uy_local;
             }
         }
         Equilibrium();
 }
 
 void LBmethod::Collisions() {
-    #pragma omp parallel for schedule(static)
+    #pragma omp for schedule(static)
         //we use f=f-(f-f_eq)/tau from BGK
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
-                    size_t idx=INDEX(x, y, i, NX, ndirections);
-                    f[idx]=f[idx]-(f[idx]-f_eq[idx])/tau;
+                    f[INDEX3D(x, y, i, NX, ndirections)]=f[INDEX3D(x, y, i, NX, ndirections)]-(f[INDEX3D(x, y, i, NX, ndirections)]-f_eq[INDEX3D(x, y, i, NX, ndirections)])/tau;
                 }
             }
         }
@@ -124,11 +119,10 @@ void LBmethod::Collisions() {
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
         std::vector<int> opposites = {0, 3, 4, 1, 2, 7, 8, 5, 6}; //Opposite velocities
-        std::vector<double> f_temp(NX * NY * ndirections, 0.0); // distribution function array temporaneal
 
         //paralleliation only in the bulk streaming
         //Avoid at boundaries to prevent race conditions
-        #pragma omp parallel for schedule(static)
+        #pragma omp for schedule(static)
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
@@ -137,7 +131,7 @@ void LBmethod::Streaming() {
                     int y_str = y - direction[i].second;
                     //streaming process
                     if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
-                        f_temp[INDEX(x,y,i,NX,ndirections)]=f[INDEX(x_str,y_str,i,NX,ndirections)];
+                        f_temp[INDEX3D(x,y,i,NX,ndirections)]=f[INDEX3D(x_str,y_str,i,NX,ndirections)];
                     }
                 }
             }
@@ -145,33 +139,37 @@ void LBmethod::Streaming() {
         //BCs
         //Sides + bottom angles
         //Left and right //maybe can be merged
-        for (unsigned int y=0;y<NY;++y){
-            //Left
-            for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
-                f_temp[INDEX(0,y,opposites[i],NX,ndirections)]=f[INDEX(0,y,i,NX,ndirections)];
+        // Boundary conditions are applied serially to avoid race conditions
+        #pragma omp single
+        {
+            for (unsigned int y=0;y<NY;++y){
+                //Left
+                for (unsigned int i : {3,6,7}){//directions: left, top left, bottom left
+                    f_temp[INDEX3D(0,y,opposites[i],NX,ndirections)]=f[INDEX3D(0,y,i,NX,ndirections)];
+                }
+                //Right
+                for (unsigned int i : {1,5,8}){//directions: right, top right, top left
+                    f_temp[INDEX3D(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX3D(NX-1,y,i,NX,ndirections)];
+                }
             }
-            //Right
-            for (unsigned int i : {1,5,8}){//directions: right, top right, top left
-                f_temp[INDEX(NX-1,y,opposites[i],NX,ndirections)]=f[INDEX(NX-1,y,i,NX,ndirections)];
+            //Bottom
+            for (unsigned int x=0;x<NX;++x){
+                for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
+                    f_temp[INDEX3D(x,0,opposites[i],NX,ndirections)]=f[INDEX3D(x,0,i,NX,ndirections)];
+                }
             }
-        }
-        //Bottom
-        for (unsigned int x=0;x<NX;++x){
-            for (unsigned int i : {4,7,8}){//directions: bottom, bottom left, bottom right
-                f_temp[INDEX(x,0,opposites[i],NX,ndirections)]=f[INDEX(x,0,i,NX,ndirections)];
-            }
-        }
-        //Top
-        for (unsigned int x=0;x<NX;++x){
-            //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
-            double rho_local=0.0;
-            for (unsigned int i=0;i<ndirections;++i){
-                rho_local+=f[INDEX(x,NY-1,i,NX,ndirections)];
-            }
-            for (unsigned int i : {2,5,6}){//directions: up,top right, top left
-                //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-                double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
-                f_temp[INDEX(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX(x,NY-1,i,NX,ndirections)] + deltaf;
+            //Top
+            for (unsigned int x=0;x<NX;++x){
+                //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
+                double rho_local=0.0;
+                for (unsigned int i=0;i<ndirections;++i){
+                    rho_local+=f[INDEX3D(x,NY-1,i,NX,ndirections)];
+                }
+                for (unsigned int i : {2,5,6}){//directions: up,top right, top left
+                    //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
+                    double deltaf=-6.0*weight[i]*rho_local*(direction[i].first*u_lid_dyn);
+                    f_temp[INDEX3D(x, NY-1, opposites[i], NX, ndirections)] = f[INDEX3D(x,NY-1,i,NX,ndirections)] + deltaf;
+                }
             }
         }
 
@@ -197,9 +195,13 @@ void LBmethod::Run_simulation() {
                 u_lid_dyn = u_lid;
             }
             
-            Collisions();
-            Streaming();
-            UpdateMacro();
+            #pragma omp parallel
+            {
+                Collisions();
+                Streaming();
+                UpdateMacro();
+            }
+            
             Visualization(t);
         }
 }
