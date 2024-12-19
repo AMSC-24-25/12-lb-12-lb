@@ -4,14 +4,21 @@
 #include <fstream>
 
 int main(int argc, char* argv[]) {
-    const unsigned int NSTEPS = 500;       // Number of timesteps to simulate
-    const unsigned int NX = 800;           // Number of nodes in the x-direction
+    const unsigned int NSTEPS = 100;       // Number of timesteps to simulate
+    const unsigned int NX = 1000;           // Number of nodes in the x-direction
     const unsigned int NY = NX;           // Number of nodes in the y-direction
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
     const double rho = 1.0;             // Initial uniform density at the start
     const unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
+    // Ensure the directory for frames exists
+    std::string frame_dir = "frames";
+    if (!std::filesystem::exists(frame_dir)) {
+        std::filesystem::create_directory(frame_dir);
+        std::cout << "Directory created for frames: " << frame_dir << std::endl;
+    }
+    
     const auto start_time = std::chrono::high_resolution_clock::now();
 
     LBmethod lb(NSTEPS, NX, NY, u_lid, Re, rho, ncores);
