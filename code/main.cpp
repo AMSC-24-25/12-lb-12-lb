@@ -12,12 +12,6 @@ int main(int argc, char* argv[]) {
     const double rho = 1.0;             // Initial uniform density at the start
     const unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
-    // Ensure the directory for frames exists
-    std::string frame_dir = "frames";
-    if (!std::filesystem::exists(frame_dir)) {
-        std::filesystem::create_directory(frame_dir);
-        std::cout << "Directory created for frames: " << frame_dir << std::endl;
-    }
     
     const auto start_time = std::chrono::high_resolution_clock::now();
 
