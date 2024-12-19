@@ -10,16 +10,6 @@
 
 namespace fs = std::filesystem;
 
-// Overloaded function for 2D to 1D indexing
-inline int INDEX(int x, int y, int NX) {
-    return x + NX * y;
-}
-
-// Overloaded function for 3D to 1D indexing
-inline int INDEX(int x, int y, int i, int NX, int ndirections) {
-    return i + ndirections * (x + NX * y);
-}
-
 class LBmethod {
 private:
     // Parameters
@@ -50,6 +40,23 @@ private:
     std::vector<double> f_eq;
     std::vector<double> f;
     std::vector<double> f_temp;
+
+    // Temporary variables for calculations
+    double rho_local;  // Temporary density accumulator
+    double ux_local;   // Temporary x-velocity accumulator
+    double uy_local;   // Temporary y-velocity accumulator
+    double u2;
+    double cu;
+
+    // Overloaded function for 2D to 1D indexing
+    inline int INDEX(int x, int y, int NX) {
+        return x + NX * y;
+    }
+
+    // Overloaded function for 3D to 1D indexing
+    inline int INDEX(int x, int y, int i, int NX, int ndirections) {
+        return i + ndirections * (x + NX * y);
+    }
 
 public:
     // Constructor
