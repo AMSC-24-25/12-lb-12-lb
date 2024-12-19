@@ -11,7 +11,6 @@ int main(int argc, char* argv[]) {
     const double Re = 100.0;             // Reynolds number
     const double rho = 1.0;             // Initial uniform density at the start
 
-
     const auto start_time = std::chrono::high_resolution_clock::now();
 
     LBmethod lb(NSTEPS, NX, NY, u_lid, Re, rho);
@@ -20,7 +19,7 @@ int main(int argc, char* argv[]) {
 
     //Measure end time
     const auto end_time = std::chrono::high_resolution_clock::now();
-    const double total_time = std::chrono::duration<double>(end_time - start_time).count();
+    const auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
     // Write computational details to CSV
     std::ofstream file("simulation_time_details.csv", std::ios::app); //Append mode
@@ -31,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     // Write header if file is empty
     if (file.tellp() == 0) {
-        file << "Grid_Dimension,Number_of_Steps,Number_of_Cores,Total_Computation_Time(s)\n";
+        file << "Grid_Dimension,Number_of_Steps,Number_of_Cores,Total_Computation_Time(ms)\n";
     }
 
     // Write details
