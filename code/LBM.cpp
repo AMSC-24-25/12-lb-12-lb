@@ -30,7 +30,7 @@ void LBmethod::Initialize() {
     f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp.assign(NX * NY * ndirections, 0.0);
-
+    #pragma omp parallel for collapse(3) schedule(static)
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
@@ -44,14 +44,14 @@ void LBmethod::Initialize() {
 
 void LBmethod::Equilibrium() {
     // Compute the equilibrium distribution function f_eq
-    #pragma omp parallel for collapse(2) private(cu, u2)
+    #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
-                u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
+                const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
+                    const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
                     f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
@@ -61,13 +61,13 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-    #pragma omp parallel for collapse(2) private(rho_local, ux_local, uy_local)
+    #pragma omp parallel for collapse(2)
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                rho_local = 0.0;
-                ux_local = 0.0;
-                uy_local = 0.0;
+                double rho_local = 0.0;
+                double ux_local = 0.0;
+                double uy_local = 0.0;
 
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
@@ -93,7 +93,7 @@ void LBmethod::UpdateMacro() {
 
 void LBmethod::Collisions() {
         //we use f=f-(f-f_eq)/tau from BGK
-        #pragma omp parallel for collapse(2)
+        #pragma omp parallel for collapse(3)
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
@@ -106,10 +106,10 @@ void LBmethod::Collisions() {
 
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
+    // Parallelize the streaming step (over x and y)
     #pragma omp parallel
     {
-        // Parallelize the streaming step (over x and y)
-        #pragma omp for collapse(2)
+        #pragma omp for collapse(3) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 for (unsigned int i = 0; i < ndirections; ++i) {
@@ -121,10 +121,9 @@ void LBmethod::Streaming() {
                 }
             }
         }
-
         // Parallelize the boundary conditions
         // Sides + bottom angles
-        #pragma omp for
+        #pragma omp for schedule(static)
         for (unsigned int y = 0; y < NY; ++y) {
             // Left
             f_temp[INDEX(0, y, 1, NX, ndirections)] = f[INDEX(0, y, 3, NX, ndirections)];
@@ -136,17 +135,15 @@ void LBmethod::Streaming() {
             f_temp[INDEX(NX - 1, y, 6, NX, ndirections)] = f[INDEX(NX - 1, y, 8, NX, ndirections)];
         }
 
-        // Bottom boundary conditions
-        #pragma omp for
+        
+        #pragma omp for schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
+            // Bottom boundary conditions
             f_temp[INDEX(x, 0, 2, NX, ndirections)] = f[INDEX(x, 0, 4, NX, ndirections)];
             f_temp[INDEX(x, 0, 5, NX, ndirections)] = f[INDEX(x, 0, 7, NX, ndirections)];
             f_temp[INDEX(x, 0, 6, NX, ndirections)] = f[INDEX(x, 0, 8, NX, ndirections)];
-        }
 
-        // Top boundary conditions (including computation of rho_local)
-        #pragma omp for
-        for (unsigned int x = 0; x < NX; ++x) {
+            // Top boundary conditions (including computation of rho_local)
             double rho_local = 0.0;
             for (unsigned int i = 0; i < ndirections; ++i) {
                 rho_local += f[INDEX(x, NY - 1, i, NX, ndirections)];
@@ -168,21 +165,10 @@ void LBmethod::Streaming() {
 void LBmethod::Run_simulation() {
     // Set threads for this simulation
         omp_set_num_threads(num_cores);
-
-        // Ensure the directory for frames exists
-        std::string frame_dir = "frames";
-        if (!fs::exists(frame_dir)) {
-            fs::create_directory(frame_dir);
-            std::cout << "Directory created for frames: " << frame_dir << std::endl;
-        }
-
+        const double u_lid_over_sigma = u_lid / sigma;//precompute constant value
         for (unsigned int t=0; t<NSTEPS; ++t){
-            if (double(t)<sigma){
-                u_lid_dyn = u_lid*double(t)/sigma;
-            }
-            else{
-                u_lid_dyn = u_lid;
-            }
+            const double t_double = static_cast<double>(t);//avoid repeated type cast
+            u_lid_dyn = (t_double < sigma) ? (u_lid_over_sigma * t_double) : u_lid;//replaced condition branching
             
             Collisions();
             Streaming();
@@ -210,12 +196,12 @@ void LBmethod::Visualization(unsigned int t) {
         }
 
         // Fill matrices with new data
-        #pragma omp parallel for collapse(2) private(rho_local, ux_local, uy_local)
+        #pragma omp parallel for collapse(2) schedule(static)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                ux_local = ux[idx];
-                uy_local = uy[idx];
+                const double ux_local = ux[idx];
+                const double uy_local = uy[idx];
                 velocity_magn_mat.at<float>(y, x) = ux_local * ux_local + uy_local * uy_local;
             }
         }
