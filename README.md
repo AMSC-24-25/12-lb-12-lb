@@ -105,5 +105,8 @@ We implemented also some codes for the static and dynamic visualization on pytho
 ### Lid velocity considerations
 In order to avoid numerical instability due to the fact that the velocity is, at the first step, different from zero at the top and the probability distribution function instead describes a static situation we decided to use at first a zero velocity on all the fluid. Then we linearly increase the lid velocity till the desired value, in this way we plan to resolve possible instability in the first steps of the code
 ### Parallelization
-We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:
+We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:<br />
+![Scalability_1](code/video/Scalability_1.png)
+<br />
+![Scalability_2](code/video/Scalability_2.png)
 
