@@ -38,7 +38,9 @@ private:
     std::vector<double> rho;
     std::vector<double> ux;
     std::vector<double> uy;
+    std::vector<double> f_eq;
     std::vector<double> f;
+    std::vector<double> f_temp;
 
     // Overloaded function for 2D to 1D indexing
     inline int INDEX(int x, int y, int NX) {
@@ -58,6 +60,7 @@ public:
 
     // Methods
     void Initialize();
+    void Equilibrium();
     void UpdateMacro();
     void Collisions();
     void Streaming();
