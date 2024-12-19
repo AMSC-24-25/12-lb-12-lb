@@ -31,7 +31,6 @@ void LBmethod::Initialize() {
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp.assign(NX * NY * ndirections, 0.0);
 
-    #pragma omp parallel for collapse(2) schedule(static)
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
@@ -45,17 +44,14 @@ void LBmethod::Initialize() {
 
 void LBmethod::Equilibrium() {
     // Compute the equilibrium distribution function f_eq
-        //collapse(2) combines the 2 loops into a single iteration space-> convient when I have large Nx and Ny (not when they're really different tho)
-        //static ensure uniform distribution
-        //I don't do collapse(3) because the inner loop is light
-        #pragma omp for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(2) private(cu, u2)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
-                const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
+                u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
 
                 for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
+                    cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
                     f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
@@ -65,17 +61,15 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-
-     #pragma omp for collapse(2) schedule(static) private(rho_local, ux_local, uy_local)
-        //or schedule(dynamic, chunk_size) if the computational complexity varies
+    #pragma omp parallel for collapse(2) private(rho_local, ux_local, uy_local)
         for (unsigned int x=0; x<NX; ++x){
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                double rho_local = 0.0;
-                double ux_local = 0.0;
-                double uy_local = 0.0;
-                
-                //#pragma omp parallel for reduction(+:rho_local, ux_local, uy_local)
+                rho_local = 0.0;
+                ux_local = 0.0;
+                uy_local = 0.0;
+
+
                 for (unsigned int i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
                     rho_local += fi;
@@ -84,24 +78,22 @@ void LBmethod::UpdateMacro() {
                 }
                 if (rho_local<1e-10){
                     rho[idx] = 0.0;
-                    ux_local = 0.0;
-                    uy_local = 0.0;
+                    ux[idx] = 0.0;
+                    uy[idx] = 0.0;
                 }
                 else {
                     rho[idx] = rho_local;
-                    ux_local /= rho_local;
-                    uy_local /= rho_local;
+                    ux[idx]=ux_local/rho_local;
+                    uy[idx]=uy_local/rho_local;
                 }
-                ux[idx]=ux_local;
-                uy[idx]=uy_local;
             }
         }
         Equilibrium();
 }
 
 void LBmethod::Collisions() {
-    #pragma omp for collapse(2) schedule(static)
         //we use f=f-(f-f_eq)/tau from BGK
+        #pragma omp parallel for collapse(2)
         for (unsigned int x=0;x<NX;++x){
             for (unsigned int y=0;y<NY;++y){
                 for (unsigned int i=0;i<ndirections;++i){
@@ -114,62 +106,59 @@ void LBmethod::Collisions() {
 
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
-    //paralleliation only in the bulk streaming
-    //Avoid at boundaries to prevent race conditions
-    #pragma omp for collapse(2) schedule(static)
-    for (unsigned int x=0;x<NX;++x){
-        for (unsigned int y=0;y<NY;++y){
-            for (unsigned int i=0;i<ndirections;++i){
-                const int x_str = x - directionx[i];
-                const int y_str = y - directiony[i];
-                //streaming process
-                if(x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY){
-                    f_temp[INDEX(x,y,i,NX,ndirections)]=f[INDEX(x_str,y_str,i,NX,ndirections)];
+    #pragma omp parallel
+    {
+        // Parallelize the streaming step (over x and y)
+        #pragma omp for collapse(2)
+        for (unsigned int x = 0; x < NX; ++x) {
+            for (unsigned int y = 0; y < NY; ++y) {
+                for (unsigned int i = 0; i < ndirections; ++i) {
+                    const int x_str = x - directionx[i];
+                    const int y_str = y - directiony[i];
+                    if (x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY) {
+                        f_temp[INDEX(x, y, i, NX, ndirections)] = f[INDEX(x_str, y_str, i, NX, ndirections)];
+                    }
                 }
             }
         }
-    }
-    //BCs
-    //Sides + bottom angles
-    //Left and right //maybe can be merged
-    // Boundary conditions are applied serially to avoid race conditions
-    #pragma omp single
-    {
-        for (unsigned int y=0;y<NY;++y){
-            //Left
-            //directions: left, top left, bottom left
-            f_temp[INDEX(0,y,1,NX,ndirections)]=f[INDEX(0,y,3,NX,ndirections)];
-            f_temp[INDEX(0,y,8,NX,ndirections)]=f[INDEX(0,y,6,NX,ndirections)];
-            f_temp[INDEX(0,y,5,NX,ndirections)]=f[INDEX(0,y,7,NX,ndirections)];
-            //Right
-            //directions: right, top right, top left
-            f_temp[INDEX(NX-1,y,3,NX,ndirections)]=f[INDEX(NX-1,y,1,NX,ndirections)];
-            f_temp[INDEX(NX-1,y,7,NX,ndirections)]=f[INDEX(NX-1,y,5,NX,ndirections)];
-            f_temp[INDEX(NX-1,y,6,NX,ndirections)]=f[INDEX(NX-1,y,8,NX,ndirections)];
-        }
-        //Bottom
-        for (unsigned int x=0;x<NX;++x){
-            //directions: bottom, bottom left, bottom right
-            f_temp[INDEX(x,0,2,NX,ndirections)]=f[INDEX(x,0,4,NX,ndirections)];
-            f_temp[INDEX(x,0,5,NX,ndirections)]=f[INDEX(x,0,7,NX,ndirections)];
-            f_temp[INDEX(x,0,6,NX,ndirections)]=f[INDEX(x,0,8,NX,ndirections)];
-        }
-        //Top
-        for (unsigned int x=0;x<NX;++x){
-            //since we are using density we can either recompute all the macroscopi quatities before or compute rho_local
-            double rho_local=0.0;
-            for (unsigned int i=0;i<ndirections;++i){
-                rho_local+=f[INDEX(x,NY-1,i,NX,ndirections)];
-            }
-            //directions: up,top right, top left
-            //this is the expresion of -2*w*rho*dot(c*u_lid)/cs^2 since cs^2=1/3 and also u_lid=(0.1,0)
-            const double deltaf2=-6.0*weight[2]*rho_local*(directionx[2]*u_lid_dyn);
-            const double deltaf5=-6.0*weight[5]*rho_local*(directionx[5]*u_lid_dyn);
-            const double deltaf6=-6.0*weight[6]*rho_local*(directionx[6]*u_lid_dyn);
 
-            f_temp[INDEX(x, NY-1, 4, NX, ndirections)] = f[INDEX(x,NY-1,2,NX,ndirections)] + deltaf2;
-            f_temp[INDEX(x, NY-1, 7, NX, ndirections)] = f[INDEX(x,NY-1,5,NX,ndirections)] + deltaf5;
-            f_temp[INDEX(x, NY-1, 8, NX, ndirections)] = f[INDEX(x,NY-1,6,NX,ndirections)] + deltaf6;
+        // Parallelize the boundary conditions
+        // Sides + bottom angles
+        #pragma omp for
+        for (unsigned int y = 0; y < NY; ++y) {
+            // Left
+            f_temp[INDEX(0, y, 1, NX, ndirections)] = f[INDEX(0, y, 3, NX, ndirections)];
+            f_temp[INDEX(0, y, 8, NX, ndirections)] = f[INDEX(0, y, 6, NX, ndirections)];
+            f_temp[INDEX(0, y, 5, NX, ndirections)] = f[INDEX(0, y, 7, NX, ndirections)];
+            // Right
+            f_temp[INDEX(NX - 1, y, 3, NX, ndirections)] = f[INDEX(NX - 1, y, 1, NX, ndirections)];
+            f_temp[INDEX(NX - 1, y, 7, NX, ndirections)] = f[INDEX(NX - 1, y, 5, NX, ndirections)];
+            f_temp[INDEX(NX - 1, y, 6, NX, ndirections)] = f[INDEX(NX - 1, y, 8, NX, ndirections)];
+        }
+
+        // Bottom boundary conditions
+        #pragma omp for
+        for (unsigned int x = 0; x < NX; ++x) {
+            f_temp[INDEX(x, 0, 2, NX, ndirections)] = f[INDEX(x, 0, 4, NX, ndirections)];
+            f_temp[INDEX(x, 0, 5, NX, ndirections)] = f[INDEX(x, 0, 7, NX, ndirections)];
+            f_temp[INDEX(x, 0, 6, NX, ndirections)] = f[INDEX(x, 0, 8, NX, ndirections)];
+        }
+
+        // Top boundary conditions (including computation of rho_local)
+        #pragma omp for
+        for (unsigned int x = 0; x < NX; ++x) {
+            double rho_local = 0.0;
+            for (unsigned int i = 0; i < ndirections; ++i) {
+                rho_local += f[INDEX(x, NY - 1, i, NX, ndirections)];
+            }
+
+            const double deltaf2 = -6.0 * weight[2] * rho_local * (directionx[2] * u_lid_dyn);
+            const double deltaf5 = -6.0 * weight[5] * rho_local * (directionx[5] * u_lid_dyn);
+            const double deltaf6 = -6.0 * weight[6] * rho_local * (directionx[6] * u_lid_dyn);
+
+            f_temp[INDEX(x, NY - 1, 4, NX, ndirections)] = f[INDEX(x, NY - 1, 2, NX, ndirections)] + deltaf2;
+            f_temp[INDEX(x, NY - 1, 7, NX, ndirections)] = f[INDEX(x, NY - 1, 5, NX, ndirections)] + deltaf5;
+            f_temp[INDEX(x, NY - 1, 8, NX, ndirections)] = f[INDEX(x, NY - 1, 6, NX, ndirections)] + deltaf6;
         }
     }
 
@@ -195,12 +184,9 @@ void LBmethod::Run_simulation() {
                 u_lid_dyn = u_lid;
             }
             
-            #pragma omp parallel
-            {
-                Collisions();
-                Streaming();
-                UpdateMacro();
-            }
+            Collisions();
+            Streaming();
+            UpdateMacro();
             Visualization(t);
         }
 }
@@ -224,12 +210,12 @@ void LBmethod::Visualization(unsigned int t) {
         }
 
         // Fill matrices with new data
-        #pragma omp parallel for collapse(2) schedule(static)
+        #pragma omp parallel for collapse(2) private(rho_local, ux_local, uy_local)
         for (unsigned int x = 0; x < NX; ++x) {
             for (unsigned int y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                const double ux_local = ux[idx];
-                const double uy_local = uy[idx];
+                ux_local = ux[idx];
+                uy_local = uy[idx];
                 velocity_magn_mat.at<float>(y, x) = ux_local * ux_local + uy_local * uy_local;
             }
         }
@@ -246,8 +232,6 @@ void LBmethod::Visualization(unsigned int t) {
         //Flip the image vertically (OpenCV works in the opposite way than our code)
         cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
 
-    
-        
         // Save the current frame to a file
         std::string filename = "frames/frame_" + std::to_string(t) + ".png";
         cv::imwrite(filename, velocity_heatmap);
