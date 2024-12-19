@@ -50,6 +50,10 @@ if [ "$LBM_VERSION" == "4" ]; then
   fi
   echo "Running simulation_exec..."
   ./simulation_exec
+  if [ -d "frames" ]; then
+    echo "Generating video from frames..."
+    ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4
+  fi
   exit 0
 fi
 
@@ -67,8 +71,10 @@ else
   ./LBM_esec
 fi
 
-# Generate video from frames
-if [ -d "frames" ]; then
-  echo "Generating video from frames..."
-  ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4
+# Generate video from frames for versions 2, 3, and 4
+if [[ "$LBM_VERSION" == "2" || "$LBM_VERSION" == "3" || "$LBM_VERSION" == "4" ]]; then
+  if [ -d "frames" ]; then
+    echo "Generating video from frames..."
+    ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4
+  fi
 fi
