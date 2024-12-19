@@ -109,9 +109,14 @@ We decide to exploit the parallelizion with openmp. We exploited strong and weak
 STRONG SCALABILITY:
 ![Strong scalability_F](code/video/Strong_fede.png)
 <br /><br /> <br />
+![Strong scalability_P](code/video/Strong_Scalability_P.png)
+<br /><br /> <br />
 WEAK SCALABILITY:
 ![Weak_scalability_F](code/video/Weak_fede.png)
 <br /><br /> <br />
+![Weak_scalability_P](code/video/Weak_Scalability_P.png)
+<br /><br /> <br />
 GRID SIZE IMPACT:
 ![Grid_size_impact_F](code/video/Grid_fede.png)
-
+<br /><br /> <br />
+![Grid_size_impact_P](code/video/Grid_size_impact_P.png)
