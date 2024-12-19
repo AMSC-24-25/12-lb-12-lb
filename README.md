@@ -107,16 +107,21 @@ In order to avoid numerical instability due to the fact that the velocity is, at
 ### Parallelization
 We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:<br /><br />
 STRONG SCALABILITY:
-![Strong scalability_F](code/video/Strong_fede.png)
-<br /><br /> <br />
-![Strong scalability_P](code/video/Strong_Scalability_P.png)
-<br /><br /> <br />
+<div style="display: flex; justify-content: center; gap: 10px;">
+  <img src="code/video/Strong_fede.png" alt="Strong scalability_F" width="300">
+  <img src="code/video/Strong_Scalability_P.png" alt="Strong scalability_P" width="300">
+</div>
+<br /><br /> 
 WEAK SCALABILITY:
-![Weak_scalability_F](code/video/Weak_fede.png)
-<br /><br /> <br />
-![Weak_scalability_P](code/video/Weak_Scalability_P.png)
-<br /><br /> <br />
+<div style="display: flex; justify-content: center; gap: 10px;">
+  <img src="code/video/Weak_fede.png" alt="Weak scalability_F" width="300">
+  <img src="code/video/Weak_Scalability_P.png" alt="Weak scalability_P" width="300">
+</div>
+<br /><br /> 
 GRID SIZE IMPACT:
-![Grid_size_impact_F](code/video/Grid_fede.png)
-<br /><br /> <br />
-![Grid_size_impact_P](code/video/Grid_size_impact_P.png)
+<div style="display: flex; justify-content: center; gap: 10px;">
+  <img src="code/video/Grid_fede.png" alt="Grid_size_impact_F" width="300">
+  <img src="code/video/Grid_size_impact_P.png" alt="Grid_size_impact_P" width="300">
+</div>
+<br /><br /> 
+
