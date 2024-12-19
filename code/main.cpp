@@ -9,13 +9,11 @@ int main(int argc, char* argv[]) {
     const unsigned int NY = NX;           // Number of nodes in the y-direction
     const double u_lid = 0.1;            // Lid velocity at the top boundary
     const double Re = 100.0;             // Reynolds number
-    const double rho = 1.0;             // Initial uniform density at the start
     const unsigned int ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
-    
     const auto start_time = std::chrono::high_resolution_clock::now();
 
-    LBmethod lb(NSTEPS, NX, NY, u_lid, Re, rho, ncores);
+    LBmethod lb(NSTEPS, NX, NY, u_lid, Re, ncores);
     lb.Initialize();
     lb.Run_simulation();
 
