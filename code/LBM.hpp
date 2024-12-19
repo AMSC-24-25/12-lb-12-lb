@@ -6,6 +6,10 @@
 #include <utility>
 #include <string>
 #include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>        
+#include <opencv2/imgproc.hpp>   
+#include <opencv2/highgui.hpp> 
+#include <opencv2/videoio.hpp> 
 #include <filesystem>
 
 
@@ -49,6 +53,8 @@ private:
     inline int INDEX(int x, int y, int i, int NX, int ndirections) {
         return i + ndirections * (x + NX * y);
     }
+
+    cv::VideoWriter video_writer;
 
 public:
     // Constructor
