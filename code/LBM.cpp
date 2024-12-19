@@ -8,8 +8,8 @@
 
 
 // Constructor
-LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsigned int NY,  const double u_lid, const double Re, const double rho0, const unsigned int num_cores)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), u_lid(u_lid), Re(Re), rho0(rho0), num_cores(num_cores), nu((u_lid * NY) / Re), tau(3.0 * nu + 0.5), 
+LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsigned int NY,  const double u_lid, const double Re, const unsigned int num_cores)
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), u_lid(u_lid), Re(Re), num_cores(num_cores), tau(3.0 * ((u_lid * NY) / Re) + 0.5), 
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
@@ -25,40 +25,20 @@ LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsign
 
 void LBmethod::Initialize() {
     //Vectors to store simulation data:
-    rho.assign(NX * NY, rho0); // Density initialized to rho0 everywhere
+    rho.assign(NX * NY, 1.0); // Density initialized to rho0 everywhere
     ux.assign(NX * NY, 0.0); // Velocity initialized to 0
     uy.assign(NX * NY, 0.0); // Velocity initialized to 0
-    f_eq.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
-    f_temp.assign(NX * NY * ndirections, 0.0);
+
     #pragma omp parallel for collapse(3) schedule(static)
     for (unsigned int x = 0; x < NX; ++x) {
         for (unsigned int y = 0; y < NY; ++y) {
             for (unsigned int i = 0; i < ndirections; ++i) {
                 const size_t idx=INDEX(x, y, i, NX, ndirections);
                 f[idx] = weight[i];
-                f_eq[idx] = weight[i];
             }
         }
     }
-}
-
-void LBmethod::Equilibrium() {
-    // Compute the equilibrium distribution function f_eq
-    #pragma omp parallel for collapse(2) schedule(static)
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
-                const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
-                const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
-
-                for (unsigned int i = 0; i < ndirections; ++i) {
-                    const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
-
-                    // Compute f_eq using the BGK collision formula
-                    f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
-                }
-            }
-        }
 }
 
 void LBmethod::UpdateMacro() {
@@ -89,10 +69,25 @@ void LBmethod::UpdateMacro() {
                 }
             }
         }
-        Equilibrium();
 }
 
 void LBmethod::Collisions() {
+        std::vector<double> f_eq(NX * NY * ndirections);  // Allocates memory without initializing values
+        //Calculate equilibrium
+        #pragma omp parallel for collapse(2) schedule(static)
+        for (unsigned int x = 0; x < NX; ++x) {
+            for (unsigned int y = 0; y < NY; ++y) {
+                const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
+                const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
+
+                for (unsigned int i = 0; i < ndirections; ++i) {
+                    const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
+
+                    // Compute f_eq using the BGK collision formula
+                    f_eq[INDEX(x, y, i, NX, ndirections)] = weight[i] * rho[idx] * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u2);
+                }
+            }
+        }
         //we use f=f-(f-f_eq)/tau from BGK
         #pragma omp parallel for collapse(3)
         for (unsigned int x=0;x<NX;++x){
@@ -107,6 +102,7 @@ void LBmethod::Collisions() {
 
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
+    std::vector<double> f_temp(NX * NY * ndirections);  // Allocates memory without initializing values
     // Parallelize the streaming step (over x and y)
     #pragma omp parallel
     {
@@ -167,7 +163,7 @@ void LBmethod::Run_simulation() {
     
     // Set threads for this simulation
         omp_set_num_threads(num_cores);
-        const double u_lid_over_sigma = u_lid / sigma;//precompute constant value
+        
         // VideoWriter setup
         const std::string video_filename = "simulation.mp4";
         const double fps = 10.0; // Frames per second for the video
@@ -177,7 +173,8 @@ void LBmethod::Run_simulation() {
             std::cerr << "Error: Could not open the video writer." << std::endl;
             return;
         }
-    
+
+        const double u_lid_over_sigma = u_lid / sigma;//precompute constant value
         for (unsigned int t=0; t<NSTEPS; ++t){
             const double t_double = static_cast<double>(t);//avoid repeated type cast
             u_lid_dyn = (t_double < sigma) ? (u_lid_over_sigma * t_double) : u_lid;//replaced condition branching
