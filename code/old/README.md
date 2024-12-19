@@ -2,7 +2,8 @@ Steps of the code implementation
 1) Sequential code
 2) Implementation of class
 3) Parallelization
-4) Optimized code
+4) Stuctured code (not parallelized)
+5) Stuctured code parallelized
 
 
 In order to run the code in this folder simply write: <br />
@@ -16,3 +17,4 @@ Example of usage: <br />
 ./compile_and_run.sh 3 8 <br />
 ./compile_and_run.sh 3 5 <br />
 ./compile_and_run.sh 3 <br />
+./compile_and_run.sh 4 <br />
