@@ -21,13 +21,11 @@ private:
     const unsigned int NY;
     const double u_lid;
     const double Re;
-    const double rho0;
     double u_lid_dyn;
     const unsigned int num_cores;
 
     // Fixed parameters
     const unsigned int ndirections = 9;
-    const double nu;
     const double tau;
     const double sigma = 10.0;
 
@@ -40,9 +38,7 @@ private:
     std::vector<double> rho;
     std::vector<double> ux;
     std::vector<double> uy;
-    std::vector<double> f_eq;
     std::vector<double> f;
-    std::vector<double> f_temp;
 
     // Overloaded function for 2D to 1D indexing
     inline int INDEX(int x, int y, int NX) {
@@ -58,11 +54,10 @@ private:
 
 public:
     // Constructor
-    LBmethod(const unsigned int NSTEPS, const unsigned int NX, const unsigned int NY, const double u_lid, const double Re, const double rho0, const unsigned int num_cores);
+    LBmethod(const unsigned int NSTEPS, const unsigned int NX, const unsigned int NY, const double u_lid, const double Re, const unsigned int num_cores);
 
     // Methods
     void Initialize();
-    void Equilibrium();
     void UpdateMacro();
     void Collisions();
     void Streaming();
