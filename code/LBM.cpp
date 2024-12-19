@@ -8,7 +8,7 @@
 
 
 // Constructor
-LBmethod::LBmethod(const unsigned int NSTEPS, const unsigned int NX,const unsigned int NY,  const double u_lid, const double Re, const unsigned int num_cores)
+LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY,  const double u_lid, const double Re, const size_t num_cores)
     : NSTEPS(NSTEPS), NX(NX), NY(NY), u_lid(u_lid), Re(Re), num_cores(num_cores), tau(3.0 * ((u_lid * NY) / Re) + 0.5), 
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
@@ -32,27 +32,23 @@ void LBmethod::Initialize() {
     f.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp.assign(NX * NY * ndirections, 0.0);
     
-    #pragma omp parallel for collapse(3) schedule(static)
-    for (unsigned int x = 0; x < NX; ++x) {
-        for (unsigned int y = 0; y < NY; ++y) {
-            for (unsigned int i = 0; i < ndirections; ++i) {
-                const size_t idx=INDEX(x, y, i, NX, ndirections);
-                f[idx] = weight[i];
-                f_eq[idx] = weight[i];
-            }
-        }
+    #pragma omp parallel for schedule(static)
+    for (size_t idx = 0; idx < NX * NY * ndirections; ++idx) {
+        const size_t i = idx % ndirections; // Use size_t for consistency
+        f[idx] = f_eq[idx] = weight[i];
     }
+
 }
 
 void LBmethod::Equilibrium() {
     // Compute the equilibrium distribution function f_eq
     #pragma omp parallel for collapse(2) schedule(static)
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
+        for (size_t x = 0; x < NX; ++x) {
+            for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
                 const double u2 = ux[idx] * ux[idx] + uy[idx] * uy[idx]; // Square of the speed magnitude
 
-                for (unsigned int i = 0; i < ndirections; ++i) {
+                for (size_t i = 0; i < ndirections; ++i) {
                     const double cu = (directionx[i] * ux[idx] + directiony[i] * uy[idx]); // Dot product (c_i · u)
 
                     // Compute f_eq using the BGK collision formula
@@ -64,15 +60,15 @@ void LBmethod::Equilibrium() {
 
 void LBmethod::UpdateMacro() {
     #pragma omp parallel for collapse(2)
-        for (unsigned int x=0; x<NX; ++x){
-            for (unsigned int y = 0; y < NY; ++y) {
+        for (size_t x=0; x<NX; ++x){
+            for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
                 double rho_local = 0.0;
                 double ux_local = 0.0;
                 double uy_local = 0.0;
 
 
-                for (unsigned int i = 0; i < ndirections; ++i) {
+                for (size_t i = 0; i < ndirections; ++i) {
                     const double fi=f[INDEX(x, y, i, NX, ndirections)];
                     rho_local += fi;
                     ux_local += fi * directionx[i];
@@ -96,9 +92,9 @@ void LBmethod::UpdateMacro() {
 void LBmethod::Collisions() {
         //we use f=f-(f-f_eq)/tau from BGK
         #pragma omp parallel for collapse(3)
-        for (unsigned int x=0;x<NX;++x){
-            for (unsigned int y=0;y<NY;++y){
-                for (unsigned int i=0;i<ndirections;++i){
+        for (size_t x=0;x<NX;++x){
+            for (size_t y=0;y<NY;++y){
+                for (size_t i=0;i<ndirections;++i){
                     const size_t idx=INDEX(x, y, i, NX, ndirections);
                     f[idx]=f[idx]-(f[idx]-f_eq[idx])/tau;
                 }
@@ -112,9 +108,9 @@ void LBmethod::Streaming() {
     #pragma omp parallel
     {
         #pragma omp for collapse(3) schedule(static)
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
-                for (unsigned int i = 0; i < ndirections; ++i) {
+        for (size_t x = 0; x < NX; ++x) {
+            for (size_t y = 0; y < NY; ++y) {
+                for (size_t i = 0; i < ndirections; ++i) {
                     const int x_str = x - directionx[i];
                     const int y_str = y - directiony[i];
                     if (x_str >= 0 && x_str < NX && y_str >= 0 && y_str < NY) {
@@ -126,7 +122,7 @@ void LBmethod::Streaming() {
         // Parallelize the boundary conditions
         // Sides + bottom angles
         #pragma omp for schedule(static)
-        for (unsigned int y = 0; y < NY; ++y) {
+        for (size_t y = 0; y < NY; ++y) {
             // Left
             f_temp[INDEX(0, y, 1, NX, ndirections)] = f[INDEX(0, y, 3, NX, ndirections)];
             f_temp[INDEX(0, y, 8, NX, ndirections)] = f[INDEX(0, y, 6, NX, ndirections)];
@@ -139,7 +135,7 @@ void LBmethod::Streaming() {
 
         
         #pragma omp for schedule(static)
-        for (unsigned int x = 0; x < NX; ++x) {
+        for (size_t x = 0; x < NX; ++x) {
             // Bottom boundary conditions
             f_temp[INDEX(x, 0, 2, NX, ndirections)] = f[INDEX(x, 0, 4, NX, ndirections)];
             f_temp[INDEX(x, 0, 5, NX, ndirections)] = f[INDEX(x, 0, 7, NX, ndirections)];
@@ -147,7 +143,7 @@ void LBmethod::Streaming() {
 
             // Top boundary conditions (including computation of rho_local)
             double rho_local = 0.0;
-            for (unsigned int i = 0; i < ndirections; ++i) {
+            for (size_t i = 0; i < ndirections; ++i) {
                 rho_local += f[INDEX(x, NY - 1, i, NX, ndirections)];
             }
 
@@ -179,7 +175,7 @@ void LBmethod::Run_simulation() {
             return;
         }
     
-        for (unsigned int t=0; t<NSTEPS; ++t){
+        for (size_t t=0; t<NSTEPS; ++t){
             const double t_double = static_cast<double>(t);//avoid repeated type cast
             u_lid_dyn = (t_double < sigma) ? (u_lid_over_sigma * t_double) : u_lid;//replaced condition branching
             
@@ -191,9 +187,42 @@ void LBmethod::Run_simulation() {
     
         video_writer.release();
         std::cout << "Video saved as " << video_filename << std::endl;
+
+        size_t x_c = NX / 2;  // Central x-coordinate
+        size_t y_c = NY / 2;  // Central x-coordinate
+        std::string output_file = "velocity_along_center.csv";
+        std::ofstream file(output_file);
+
+        if (!file.is_open()) {
+            std::cerr << "Error: Unable to open the output file." << std::endl;
+            return;
+        }
+        file<< "Vertical line:\n";
+        file << "y,velocity_magnitude\n";
+
+        for (size_t y = 0; y < NY; ++y) {
+            const size_t idx = INDEX(x_c, NY-y, NX);
+            const double velocity_magnitude = uy[idx]/u_lid;
+
+            file << NY-y << "," << velocity_magnitude << "\n";
+        }
+
+        file<<"\n\n";
+        file<< "Horizontal line:\n";
+        file << "x,velocity_magnitude\n";
+
+        for (size_t x = 0; x < NX; ++x) {
+            const size_t idx = INDEX(NX-x, y_c, NX);
+            const double velocity_magnitude = ux[idx]/u_lid;
+
+            file << NX-x << "," << velocity_magnitude << "\n";
+        }
+
+        file.close();
+        std::cout << "Velocity magnitudes along the central line have been written to: " << output_file << std::endl;
 }
 
-void LBmethod::Visualization(unsigned int t) {
+void LBmethod::Visualization(size_t t) {
         static cv::Mat velocity_magn_mat;
         static cv::Mat velocity_magn_norm;
         static cv::Mat velocity_heatmap;
@@ -213,8 +242,8 @@ void LBmethod::Visualization(unsigned int t) {
 
         // Fill matrices with new data
         #pragma omp parallel for collapse(2) schedule(static)
-        for (unsigned int x = 0; x < NX; ++x) {
-            for (unsigned int y = 0; y < NY; ++y) {
+        for (size_t x = 0; x < NX; ++x) {
+            for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
                 const double ux_local = ux[idx];
                 const double uy_local = uy[idx];
