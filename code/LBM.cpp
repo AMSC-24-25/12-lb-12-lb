@@ -3,6 +3,7 @@
 #include <omp.h>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 
 
@@ -163,9 +164,20 @@ void LBmethod::Streaming() {
 }
 
 void LBmethod::Run_simulation() {
+    
     // Set threads for this simulation
         omp_set_num_threads(num_cores);
         const double u_lid_over_sigma = u_lid / sigma;//precompute constant value
+        // VideoWriter setup
+        const std::string video_filename = "simulation.mp4";
+        const double fps = 10.0; // Frames per second for the video
+        video_writer.open(video_filename, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), fps, cv::Size(NX, NY));
+
+        if (!video_writer.isOpened()) {
+            std::cerr << "Error: Could not open the video writer." << std::endl;
+            return;
+        }
+    
         for (unsigned int t=0; t<NSTEPS; ++t){
             const double t_double = static_cast<double>(t);//avoid repeated type cast
             u_lid_dyn = (t_double < sigma) ? (u_lid_over_sigma * t_double) : u_lid;//replaced condition branching
@@ -175,6 +187,9 @@ void LBmethod::Run_simulation() {
             UpdateMacro();
             Visualization(t);
         }
+    
+        video_writer.release();
+        std::cout << "Video saved as " << video_filename << std::endl;
 }
 
 void LBmethod::Visualization(unsigned int t) {
@@ -218,7 +233,7 @@ void LBmethod::Visualization(unsigned int t) {
         //Flip the image vertically (OpenCV works in the opposite way than our code)
         cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
 
-        // Save the current frame to a file
-        std::string filename = "frames/frame_" + std::to_string(t) + ".png";
-        cv::imwrite(filename, velocity_heatmap);
+        // Add frame to video
+        video_writer.write(velocity_heatmap);
+        
 }
