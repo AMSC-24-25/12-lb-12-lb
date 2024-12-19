@@ -8,7 +8,6 @@
 #include <opencv2/opencv.hpp>
 #include <filesystem>
 
-namespace fs = std::filesystem;
 
 class LBmethod {
 private:
@@ -40,13 +39,6 @@ private:
     std::vector<double> f_eq;
     std::vector<double> f;
     std::vector<double> f_temp;
-
-    // Temporary variables for calculations
-    double rho_local;  // Temporary density accumulator
-    double ux_local;   // Temporary x-velocity accumulator
-    double uy_local;   // Temporary y-velocity accumulator
-    double u2;
-    double cu;
 
     // Overloaded function for 2D to 1D indexing
     inline int INDEX(int x, int y, int NX) {
