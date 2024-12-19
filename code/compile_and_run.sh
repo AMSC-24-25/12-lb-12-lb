@@ -34,11 +34,4 @@ fi
 echo "Running the simulation..."
 ./simulation_exec $NUM_CORES
 
-# Generate video from frames
-if [ -d "frames" ]; then
-  echo "Generating video from frames..."
-  ffmpeg -framerate 10 -i frames/frame_%d.png -c:v libx264 -r 30 -pix_fmt yuv420p simulation.mp4
-  echo "Video saved as simulation.mp4"
-else
-  echo "No frames directory found. Skipping video generation."
-fi
+
