@@ -187,39 +187,6 @@ void LBmethod::Run_simulation() {
     
         video_writer.release();
         std::cout << "Video saved as " << video_filename << std::endl;
-
-        size_t x_c = NX / 2;  // Central x-coordinate
-        size_t y_c = NY / 2;  // Central x-coordinate
-        std::string output_file = "velocity_along_center.csv";
-        std::ofstream file(output_file);
-
-        if (!file.is_open()) {
-            std::cerr << "Error: Unable to open the output file." << std::endl;
-            return;
-        }
-        file<< "Vertical line:\n";
-        file << "y,velocity_magnitude\n";
-
-        for (size_t y = 0; y < NY; ++y) {
-            const size_t idx = INDEX(x_c, NY-y, NX);
-            const double velocity_magnitude = uy[idx]/u_lid;
-
-            file << NY-y << "," << velocity_magnitude << "\n";
-        }
-
-        file<<"\n\n";
-        file<< "Horizontal line:\n";
-        file << "x,velocity_magnitude\n";
-
-        for (size_t x = 0; x < NX; ++x) {
-            const size_t idx = INDEX(NX-x, y_c, NX);
-            const double velocity_magnitude = ux[idx]/u_lid;
-
-            file << NX-x << "," << velocity_magnitude << "\n";
-        }
-
-        file.close();
-        std::cout << "Velocity magnitudes along the central line have been written to: " << output_file << std::endl;
 }
 
 void LBmethod::Visualization(size_t t) {
