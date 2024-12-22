@@ -1,4 +1,4 @@
-#include "LBM.hpp"
+#include "plasma.hpp"
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -8,11 +8,13 @@ int main(int argc, char* argv[]) {
     const size_t NX = 129;           // Number of nodes in the x-direction
     const size_t NY = NX;           // Number of nodes in the y-direction
     const double Re = 100.0;             // Reynolds number
+    const double tau_ion=0.01;
+    const double tau_el=0.01;
     const size_t ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
     const auto start_time = std::chrono::high_resolution_clock::now();
 
-    LBmethod lb(NSTEPS, NX, NY, Re, ncores);
+    LBmethod lb(NSTEPS, NX, NY, Re, ncores, tau_ion, tau_el);
     lb.Initialize();
     lb.Run_simulation();
 
@@ -40,3 +42,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
