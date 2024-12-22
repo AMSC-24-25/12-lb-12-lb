@@ -54,6 +54,9 @@ private:
     std::vector<double> f_temp_ion;
     std::vector<double> f_temp_el;
 
+    std::vector<double> phi;
+    std::vector<double> phi_new;
+
     // Overloaded function for 2D to 1D indexing
     inline size_t INDEX(size_t x, size_t y, size_t NX) {
         return x + NX * y;
