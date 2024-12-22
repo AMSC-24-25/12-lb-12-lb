@@ -1,4 +1,4 @@
-#include "LBM.hpp"
+#include "plasma.hpp"
 #include <cmath>
 #include <omp.h>
 #include <opencv2/imgproc.hpp>
@@ -8,8 +8,8 @@
 
 
 // Constructor
-LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const double Re, const size_t num_cores)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), tau(3.0 * ((u_lid * NY) / Re) + 0.5), 
+LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion,  const size_t tau_el)
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), 
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
@@ -95,11 +95,11 @@ void LBmethod::UpdateMacro() {
                     uy_local_el += fi_el * directiony[i];
                     
                 }
-                if (rho_local<1e-10){
+                if (rho_local_ion<1e-10){
                     rho_ion[idx] = 0.0;
                     ux_ion[idx] = 0.0;
                     uy_ion[idx] = 0.0;
-
+                }else if (rho_local_el<1e-10){
                     rho_el[idx] = 0.0;
                     ux_el[idx] = 0.0;
                     uy_el[idx] = 0.0;
@@ -128,7 +128,7 @@ void LBmethod::SolvePoisson(){
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y, NX);
-            rho_c[idx] = e * (rho_ion[idx] - rho_el[idx]);  // Charge density
+            rho_c[idx] = q_ion * rho_ion[idx] - q_el * rho_el[idx];  // Charge density
         }
     }
 
@@ -153,7 +153,7 @@ void LBmethod::SolvePoisson(){
         }
         phi = phi_new;  // Update the potential
     } while (max_error > tol);
-    this->phi =phi; //store the result
+    //this->phi =phi; //store the result
 }
 
 void LBmethod::Collisions() {
