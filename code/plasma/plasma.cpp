@@ -74,26 +74,44 @@ void LBmethod::UpdateMacro() {
         for (size_t x=0; x<NX; ++x){
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                double rho_local = 0.0;
-                double ux_local = 0.0;
-                double uy_local = 0.0;
+                double rho_local_ion = 0.0;
+                double ux_local_ion = 0.0;
+                double uy_local_ion = 0.0;
+
+                double rho_local_el = 0.0;
+                double ux_local_el = 0.0;
+                double uy_local_el = 0.0;
 
 
                 for (size_t i = 0; i < ndirections; ++i) {
-                    const double fi=f[INDEX(x, y, i, NX, ndirections)];
-                    rho_local += fi;
-                    ux_local += fi * directionx[i];
-                    uy_local += fi * directiony[i];
+                    const double fi_ion=f_ion[INDEX(x, y, i, NX, ndirections)];
+                    rho_local_ion += fi_ion;
+                    ux_local_ion += fi_ion * directionx[i];
+                    uy_local_ion += fi_ion * directiony[i];
+
+                    const double fi_el=f_el[INDEX(x, y, i, NX, ndirections)];
+                    rho_local_el += fi_el;
+                    ux_local_el += fi_el * directionx[i];
+                    uy_local_el += fi_el * directiony[i];
+                    
                 }
                 if (rho_local<1e-10){
-                    rho[idx] = 0.0;
-                    ux[idx] = 0.0;
-                    uy[idx] = 0.0;
+                    rho_ion[idx] = 0.0;
+                    ux_ion[idx] = 0.0;
+                    uy_ion[idx] = 0.0;
+
+                    rho_el[idx] = 0.0;
+                    ux_el[idx] = 0.0;
+                    uy_el[idx] = 0.0;
                 }
                 else {
-                    rho[idx] = rho_local;
-                    ux[idx]=ux_local/rho_local;
-                    uy[idx]=uy_local/rho_local;
+                    rho_ion[idx] = rho_local_ion;
+                    ux_ion[idx]=ux_local_ion/rho_local_ion;
+                    uy_ion[idx]=uy_local_ion/rho_local_ion;
+
+                    rho_el[idx] = rho_local_el;
+                    ux_el[idx]=ux_local_el/rho_local_el;
+                    uy_el[idx]=uy_local_el/rho_local_el;
                 }
             }
         }
@@ -272,21 +290,49 @@ void LBmethod::Run_simulation() {
 }
 
 void LBmethod::Visualization(size_t t) {
-        static cv::Mat velocity_magn_mat;
-        static cv::Mat velocity_magn_norm;
-        static cv::Mat velocity_heatmap;
+        static cv::Mat velocity_magn_mat_ion;
+        static cv::Mat velocity_magn_mat_el;
+        static cv::Mat velocity_heatmap_ion;
+        static cv::Mat velocity_heatmap_el;
+
+        static cv::Mat density_mat_ion;
+        static cv::Mat density_mat_el;
+        static cv::Mat density_heatmap_ion;
+        static cv::Mat density_heatmap_el;
+
+        static cv::Mat combined_density_mat;
+        static cv::Mat combined_velocity_mat;
+        static cv::Mat combined_density_heatmap;
+        static cv::Mat combined_velocity_heatmap;
+
+        static cv::Mat output_frame;
+
 
         // Initialize only when t == 0
         if (t == 0) {
         // Initialize the heatmaps with the same size as the grid
             //OpenCV uses a row-major indexing
-            velocity_magn_mat = cv::Mat(NY, NX, CV_32F);
-        
-            // Create matrices for normalized values
-            velocity_magn_norm = cv::Mat(NY, NX, CV_32F);
+            velocity_magn_mat_ion = cv::Mat(NY, NX, CV_32F);
+            velocity_magn_mat_el = cv::Mat(NY, NX, CV_32F);
+
+            density_mat_ion = cv::Mat(NY, NX, CV_32F);
+            density_mat_el = cv::Mat(NY, NX, CV_32F);
+    
 
             // Create heatmap images (8 bit images)
-            velocity_heatmap = cv::Mat(NY, NX, CV_8UC3);
+            velocity_heatmap_ion = cv::Mat(NY, NX, CV_8UC3);
+            velocity_heatmap_el = cv::Mat(NY, NX, CV_8UC3);
+
+            density_heatmap_ion = cv::Mat(NY, NX, CV_8UC3);
+            density_heatmap_el = cv::Mat(NY, NX, CV_8UC3);
+
+            combined_density_mat = cv::Mat(NY, NX, CV_32F);
+            combined_velocity_mat = cv::Mat(NY, NX, CV_32F);
+
+            combined_density_heatmap = cv::Mat(NY, NX, CV_8UC3);
+            combined_velocity_heatmap = cv::Mat(NY, NX, CV_8UC3);
+
+            output_frame = cv::Mat(2 * NY, 3 * NX, CV_8UC3);
         }
 
         // Fill matrices with new data
@@ -294,25 +340,86 @@ void LBmethod::Visualization(size_t t) {
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                const double ux_local = ux[idx];
-                const double uy_local = uy[idx];
-                velocity_magn_mat.at<float>(y, x) = ux_local * ux_local + uy_local * uy_local;
+
+                const double ux_local_ion = ux_ion[idx];
+                const double uy_local_ion = uy_ion[idx];
+                velocity_magn_mat_ion.at<float>(y, x) = std::sqrt(ux_local_ion * ux_local_ion + uy_local_ion * uy_local_ion);
+
+                const double ux_local_el = ux_el[idx];
+                const double uy_local_el = uy_el[idx];
+                velocity_magn_mat_el.at<float>(y, x) = std::sqrt(ux_local_el * ux_local_el + uy_local_el * uy_local_el);
+
+                const double rho_local_ion = rho_ion[idx];
+                const double rho_local_el = rho_el[idx];
+                density_mat_ion.at<float>(y,x) =rho_local_ion;
+                density_mat_el.at<float>(y,x) =rho_local_el;
+
+                const double rho_diff= rho_local_ion - rho_local_el;
+                const double ux_diff= ux_local_ion - ux_local_el;
+                const double uy_diff= uy_local_ion - uy_local_el;
+                combined_density_mat.at<float>(y,x) = rho_diff; 
+                combined_velocity_mat.at<float>(y,x) = std::sqrt(ux_diff * ux_diff + uy_diff * uy_diff);
+
+
             }
         }
 
         // Normalize the matrices to 0-255 for display
-        cv::normalize(velocity_magn_mat, velocity_magn_norm, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(velocity_magn_mat_ion, velocity_magn_mat_ion, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(velocity_magn_mat_el, velocity_magn_mat_el, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(density_mat_ion, density_mat_ion, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(density_mat_el, density_mat_el, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(combined_density_mat, combined_density_mat, 0, 255, cv::NORM_MINMAX);
+        cv::normalize(combined_velocity_mat, combined_velocity_mat, 0, 255, cv::NORM_MINMAX);
 
         //8-bit images
-        velocity_magn_norm.convertTo(velocity_magn_norm, CV_8U);
+        velocity_magn_mat_ion.convertTo(velocity_magn_mat_ion, CV_8U);
+        velocity_magn_mat_el.convertTo(velocity_magn_mat_el, CV_8U);
+        density_mat_ion.convertTo(density_mat_ion, CV_8U);
+        density_mat_el.convertTo(density_mat_el, CV_8U);
+        combined_density_mat.convertTo(combined_density_mat, CV_8U);
+        combined_velocity_mat.convertTo(combined_velocity_mat, CV_8U);
 
         // Apply color maps
-        cv::applyColorMap(velocity_magn_norm, velocity_heatmap, cv::COLORMAP_PLASMA);
+        cv::applyColorMap(velocity_magn_mat_ion, velocity_heatmap_ion, cv::COLORMAP_PLASMA);
+        cv::applyColorMap(velocity_magn_mat_el, velocity_heatmap_el, cv::COLORMAP_PLASMA);
+        cv::applyColorMap(density_mat_ion, density_heatmap_ion, cv::COLORMAP_JET);
+        cv::applyColorMap(density_mat_el, density_heatmap_el, cv::COLORMAP_JET);
+
+        cv::applyColorMap(combined_density_mat, combined_density_heatmap, cv::COLORMAP_JET);
+        cv::applyColorMap(combined_velocity_mat, combined_velocity_heatmap, cv::COLORMAP_PLASMA);
 
         //Flip the image vertically (OpenCV works in the opposite way than our code)
-        cv::flip(velocity_heatmap, velocity_heatmap, 0); //flips along the x axis
+        cv::flip(velocity_heatmap_ion, velocity_heatmap_ion, 0); //flips along the x axis
+        cv::flip(velocity_heatmap_el, velocity_heatmap_el, 0);
+        cv::flip(density_heatmap_ion, density_heatmap_ion, 0);
+        cv::flip(density_heatmap_el, density_heatmap_el, 0);
+        cv::flip(combined_density_heatmap, combined_density_heatmap, 0);
+        cv::flip(combined_velocity_heatmap, combined_velocity_heatmap, 0);
+
+        cv::Mat top_row, bottom_row;
+
+        cv::hconcat(std::vector<cv::Mat>{density_heatmap_ion, density_heatmap_el, combined_density_heatmap}, top_row);
+        cv::hconcat(std::vector<cv::Mat>{velocity_heatmap_ion, velocity_heatmap_el, combined_velocity_heatmap}, bottom_row);
+        cv::vconcat(std::vector<cv::Mat>{top_row, bottom_row}, output_frame(cv::Rect(0, 60, 3 * NX, 2 * NY)));
+
+        // Add titles above each column
+        cv::putText(output_frame, "Density of Ions", cv::Point(NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+        cv::putText(output_frame, "Density of Electrons", cv::Point(3 * NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+        cv::putText(output_frame, "Combined Density", cv::Point(5 * NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+        cv::putText(output_frame, "Velocity of Ions", cv::Point(NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+        cv::putText(output_frame, "Velocity of Electrons", cv::Point(3 * NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+        cv::putText(output_frame, "Combined Velocity", cv::Point(5 * NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+
+        // Add a legend for the color maps
+        cv::Mat legend(20, 256, CV_8UC3);
+        for (int i = 0; i < 256; ++i) {
+            legend.col(i).setTo(cv::Vec3b(i, i, i)); // Grayscale gradient
+        }
+        cv::applyColorMap(legend, legend, cv::COLORMAP_JET); // Apply the same colormap
+        legend.copyTo(output_frame(cv::Rect(3 * NX + 20, 60, 256, 20)));
 
         // Add frame to video
-        video_writer.write(velocity_heatmap);
+        video_writer.write(output_frame);
         
 }
