@@ -9,7 +9,7 @@
 
 // Constructor
 LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion,  const size_t tau_el)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), 
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), tau_ion(tau_ion), tau_el(tau_el), 
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
