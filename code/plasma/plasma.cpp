@@ -133,8 +133,8 @@ void LBmethod::SolvePoisson(){
     }
 
     // Solve Poisson equation (for simplicity, using Jacobi iteration)
-    std::vector<double> phi(NX * NY, 0.0);
-    std::vector<double> phi_new(NX * NY, 0.0);
+    phi.assign(NX * NY, 0.0);
+    phi_new.assign(NX * NY, 0.0);
     double tol = 1e-6;  // Convergence tolerance
     double max_error;
     do {
