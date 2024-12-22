@@ -20,7 +20,6 @@ private:
     const size_t NX;
     const size_t NY;
     const double Re;
-    double u_lid_dyn;
     const size_t num_cores;
 
     // Fixed parameters
@@ -69,7 +68,7 @@ private:
 
 public:
     // Constructor
-    LBmethod(const size_t NSTEPS, const size_t NX, const size_t NY, const double u_lid, const double Re, const size_t num_cores);
+    LBmethod(const size_t NSTEPS, const size_t NX, const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion, const size_t tau_el);
 
     // Methods
     void Initialize();
@@ -83,3 +82,4 @@ public:
 };
 
 #endif // LBMETHOD_H
+
