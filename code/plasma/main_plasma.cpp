@@ -5,7 +5,7 @@
 
 int main(int argc, char* argv[]) {
     const size_t NSTEPS = 1000;       // Number of timesteps to simulate
-    const size_t NX = 129;           // Number of nodes in the x-direction
+    const size_t NX = 100;           // Number of nodes in the x-direction
     const size_t NY = NX;           // Number of nodes in the y-direction
     const double Re = 100.0;             // Reynolds number
     const double tau_ion=0.01;
@@ -42,4 +42,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
