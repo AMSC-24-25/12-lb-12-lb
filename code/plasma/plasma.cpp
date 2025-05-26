@@ -9,7 +9,7 @@
 
 // Constructor
 LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion,  const size_t tau_el)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), tau_ion(tau_ion), tau_el(tau_el), 
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), tau_ion(tau_ion), tau_el(tau_el),
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
@@ -24,20 +24,24 @@ LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const d
 
 
 void LBmethod::Initialize() {
-    //Vectors to store simulation data: IONS
-    rho_ion.assign(NX * NY, 1.0); // Density initialized to rho0 everywhere
+    //Vectors to store simulation data: 
+    //IONS
+    rho_ion.assign(NX * NY, 1.0); // Density initialized to 1 everywhere
     ux_ion.assign(NX * NY, 0.0); // Velocity initialized to 0
     uy_ion.assign(NX * NY, 0.0); // Velocity initialized to 0
     f_eq_ion.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f_ion.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp_ion.assign(NX * NY * ndirections, 0.0);
     //ELECTRONS
-    rho_el.assign(NX * NY, 1.0); // Density initialized to rho0 everywhere
+    rho_el.assign(NX * NY, 1.0); // Density initialized to 1 everywhere
     ux_el.assign(NX * NY, 0.0); // Velocity initialized to 0
     uy_el.assign(NX * NY, 0.0); // Velocity initialized to 0
     f_eq_el.assign(NX * NY * ndirections, 0.0); // Equilibrium distribution function array
     f_el.assign(NX * NY * ndirections, 0.0); //  Distribution function array
     f_temp_el.assign(NX * NY * ndirections, 0.0);
+    //Poisson equation:
+    phi.assign(NX * NY, 0.0);
+    phi_new.assign(NX * NY, 0.0);
     
     #pragma omp parallel for schedule(static)
     for (size_t idx = 0; idx < NX * NY * ndirections; ++idx) {
@@ -70,17 +74,25 @@ void LBmethod::Equilibrium() {
 }
 
 void LBmethod::UpdateMacro() {
-    #pragma omp parallel for collapse(2)
+    double rho_local_ion = 0.0;
+    double ux_local_ion = 0.0;
+    double uy_local_ion = 0.0;
+
+    double rho_local_el = 0.0;
+    double ux_local_el = 0.0;
+    double uy_local_el = 0.0;
+
+    #pragma omp parallel for collapse(2) private(rho_local_ion, ux_local_ion, uy_local_ion, rho_local_el, ux_local_el, uy_local_el)
         for (size_t x=0; x<NX; ++x){
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                double rho_local_ion = 0.0;
-                double ux_local_ion = 0.0;
-                double uy_local_ion = 0.0;
+                rho_local_ion = 0.0;
+                ux_local_ion = 0.0;
+                uy_local_ion = 0.0;
 
-                double rho_local_el = 0.0;
-                double ux_local_el = 0.0;
-                double uy_local_el = 0.0;
+                rho_local_el = 0.0;
+                ux_local_el = 0.0;
+                uy_local_el = 0.0;
 
 
                 for (size_t i = 0; i < ndirections; ++i) {
@@ -124,7 +136,7 @@ void LBmethod::SolvePoisson(){
     // Compute charge density
     std::vector<double> rho_c(NX * NY, 0.0);
 
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y, NX);
@@ -133,13 +145,11 @@ void LBmethod::SolvePoisson(){
     }
 
     // Solve Poisson equation (for simplicity, using Jacobi iteration)
-    phi.assign(NX * NY, 0.0);
-    phi_new.assign(NX * NY, 0.0);
     double tol = 1e-6;  // Convergence tolerance
     double max_error;
     do {
         max_error = 0.0;
-        #pragma omp parallel for collapse(2) schedule(static)
+        
         for (size_t x = 1; x < NX - 1; ++x) {
             for (size_t y = 1; y < NY - 1; ++y) {
                 const size_t idx = INDEX(x, y, NX);
@@ -152,13 +162,15 @@ void LBmethod::SolvePoisson(){
             }
         }
         phi = phi_new;  // Update the potential
+        phi.swap(phi_new);
     } while (max_error > tol);
-    //this->phi =phi; //store the result
+    this->phi =phi; //store the result
 }
 
 void LBmethod::Collisions() {
     //Compute electric field from phi gradient: 
     std::vector<double> Ex(NX * NY, 0.0), Ey(NX * NY, 0.0);
+    
     #pragma omp parallel for collapse(2) schedule(static)
     for (size_t x = 1; x < NX - 1; ++x) {
         for (size_t y = 1; y < NY - 1; ++y) {
@@ -175,11 +187,15 @@ void LBmethod::Collisions() {
             const size_t idx = INDEX(x, y, NX);
 
             // Apply electric force for ions (F=qa*E)
-            ux_ion[idx] += tau_ion * q_ion * Ex[idx] / rho_ion[idx];
-            uy_ion[idx] += tau_ion * q_ion * Ey[idx] / rho_ion[idx];
-            // Apply electric force for electrons (opposite charge)
-            ux_el[idx] -= tau_el * q_el * Ex[idx] / rho_el[idx];
-            uy_el[idx] -= tau_el * q_el * Ey[idx] / rho_el[idx];
+            
+            if (rho_ion[idx] > 1e-10) {
+                ux_ion[idx] += tau_ion * q_ion * Ex[idx] / rho_ion[idx];
+                uy_ion[idx] += tau_ion * q_ion * Ey[idx] / rho_ion[idx];
+            }
+            if (rho_el[idx] > 1e-10) {
+                ux_el[idx] -= tau_el * q_el * Ex[idx] / rho_el[idx];
+                uy_el[idx] -= tau_el * q_el * Ey[idx] / rho_el[idx];
+            }
         }
     }
     //Collision step (BGK)
@@ -279,9 +295,14 @@ void LBmethod::Run_simulation() {
         for (size_t t=0; t<NSTEPS; ++t){
             const double t_double = static_cast<double>(t);//avoid repeated type cast
             
+            SolvePoisson();
+            std::cout<<"ok poisson"<<std::endl;
             Collisions();
+            std::cout<<"ok collision"<<std::endl;
             Streaming();
+            std::cout<<"ok streaming"<<std::endl;
             UpdateMacro();
+            std::cout<<"ok update"<<std::endl;
             Visualization(t);
         }
     
@@ -398,11 +419,12 @@ void LBmethod::Visualization(size_t t) {
         cv::flip(combined_velocity_heatmap, combined_velocity_heatmap, 0);
 
         cv::Mat top_row, bottom_row;
-
+        std::cout<<"ok";
         cv::hconcat(std::vector<cv::Mat>{density_heatmap_ion, density_heatmap_el, combined_density_heatmap}, top_row);
         cv::hconcat(std::vector<cv::Mat>{velocity_heatmap_ion, velocity_heatmap_el, combined_velocity_heatmap}, bottom_row);
         cv::vconcat(std::vector<cv::Mat>{top_row, bottom_row}, output_frame(cv::Rect(0, 60, 3 * NX, 2 * NY)));
 
+        std::cout<<"ok";
         // Add titles above each column
         cv::putText(output_frame, "Density of Ions", cv::Point(NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
         cv::putText(output_frame, "Density of Electrons", cv::Point(3 * NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
