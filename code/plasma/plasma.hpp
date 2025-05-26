@@ -26,8 +26,8 @@ private:
     const size_t ndirections = 9;
     const double tau_ion;
     const double tau_el;
-    const double q_ion=1.6 * 1e-19;
-    const double q_el= - 1.6 * 1e-19;;
+    const double q_ion=1.6021766 * 1e-19;
+    const double q_el= - 1.6021766 * 1e-19;;
     const double sigma = 10.0;
 
     // Directions and weights for D2Q9
@@ -53,7 +53,7 @@ private:
 
     std::vector<double> f_temp_ion;
     std::vector<double> f_temp_el;
-
+    
     std::vector<double> phi;
     std::vector<double> phi_new;
 
@@ -71,7 +71,7 @@ private:
 
 public:
     // Constructor
-    LBmethod(const size_t NSTEPS, const size_t NX, const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion, const size_t tau_el);
+    LBmethod(const size_t NSTEPS, const size_t NX, const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion ,const size_t tau_el);
 
     // Methods
     void Initialize();
@@ -85,4 +85,3 @@ public:
 };
 
 #endif // LBMETHOD_H
-
