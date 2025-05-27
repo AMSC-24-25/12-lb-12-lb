@@ -8,8 +8,8 @@
 
 
 // Constructor
-LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const double Re, const size_t num_cores, const size_t tau_ion,  const size_t tau_el)
-    : NSTEPS(NSTEPS), NX(NX), NY(NY), Re(Re), num_cores(num_cores), tau_ion(tau_ion), tau_el(tau_el),
+LBmethod::LBmethod(const size_t NSTEPS, const size_t NX,const size_t NY, const size_t num_cores, const size_t Z_ion, const size_t A_ion, const double r_ion, const double tau_ion,  const double tau_el)
+    : NSTEPS(NSTEPS), NX(NX), NY(NY), num_cores(num_cores),Z_ion(Z_ion), A_ion(A_ion),r_ion(r_ion), tau_ion(tau_ion), tau_el(tau_el),
       directionx({0,1,0,-1,0,1,-1,-1,1}),
       directiony({0,0,1,0,-1,1,1,-1,-1}),  
       weight({  4.0 / 9.0, 
@@ -130,75 +130,97 @@ void LBmethod::UpdateMacro() {
         Equilibrium();
 }
 
-void LBmethod::SolvePoisson(){
-    //Poisson equation: \nablasqr phi = -rho_c/epsilon
-    //phi=electric potential
-    // Compute charge density
+void LBmethod::SolvePoisson() {
+    // Poisson equation in SI units: \nabla^2 phi = -rho_c / eps_0
+    // phi = electric potential (V), eps_0 = vacuum permittivity (F/m)
+
     std::vector<double> rho_c(NX * NY, 0.0);
 
+    // Compute charge density: rho_c = q_ion * rho_ion - q_el * rho_el
     #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y, NX);
-            rho_c[idx] = q_ion * rho_ion[idx] - q_el * rho_el[idx];  // Charge density
+            rho_c[idx] = Z_ion* (-q_el) * rho_ion[idx] - q_el * rho_el[idx];
         }
     }
 
-    // Solve Poisson equation (for simplicity, using Jacobi iteration)
+    // Solve Poisson equation using Jacobi iteration
     double tol = 1e-6;  // Convergence tolerance
     double max_error;
     do {
         max_error = 0.0;
-        
+
         for (size_t x = 1; x < NX - 1; ++x) {
             for (size_t y = 1; y < NY - 1; ++y) {
                 const size_t idx = INDEX(x, y, NX);
-                phi_new[idx] = 0.25 * (phi[INDEX(x + 1, y, NX)] + 
-                                       phi[INDEX(x - 1, y, NX)] + 
-                                       phi[INDEX(x, y + 1, NX)] + 
-                                       phi[INDEX(x, y - 1, NX)] - 
-                                       rho_c[idx]);
+                phi_new[idx] = 0.25 * (
+                    phi[INDEX(x + 1, y, NX)] +
+                    phi[INDEX(x - 1, y, NX)] +
+                    phi[INDEX(x, y + 1, NX)] +
+                    phi[INDEX(x, y - 1, NX)] -
+                    rho_c[idx] / eps_0
+                );
                 max_error = std::max(max_error, std::abs(phi_new[idx] - phi[idx]));
             }
         }
-        phi = phi_new;  // Update the potential
         phi.swap(phi_new);
     } while (max_error > tol);
-    this->phi =phi; //store the result
 }
 
+
 void LBmethod::Collisions() {
-    //Compute electric field from phi gradient: 
+    // External magnetic field (assumed constant and perpendicular to 2D plane)
+
+    // Compute electric field from phi gradient
     std::vector<double> Ex(NX * NY, 0.0), Ey(NX * NY, 0.0);
-    
+
     #pragma omp parallel for collapse(2) schedule(static)
     for (size_t x = 1; x < NX - 1; ++x) {
         for (size_t y = 1; y < NY - 1; ++y) {
             const size_t idx = INDEX(x, y, NX);
-            Ex[idx] = -(phi[INDEX(x + 1, y, NX)] - phi[INDEX(x - 1, y, NX)]) / 2.0;
-            Ey[idx] = -(phi[INDEX(x, y + 1, NX)] - phi[INDEX(x, y - 1, NX)]) / 2.0;
+            Ex[idx] = -(phi[INDEX(x + 1, y, NX)] - phi[INDEX(x - 1, y, NX)]) / 2.0 + Ex_ext;
+            Ey[idx] = -(phi[INDEX(x, y + 1, NX)] - phi[INDEX(x, y - 1, NX)]) / 2.0 + Ey_ext;
         }
     }
+    std::cout<<"phi="<< phi[0]<<" or "<< phi[100]<<" or "<< phi[800]<< " or "<<phi[1300]<< " or "<<phi[2000]<<std::endl;
 
-    //Apply forces unew=u + tau*F
+    // Apply electric and magnetic forces
     #pragma omp parallel for collapse(2) schedule(static)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y, NX);
 
-            // Apply electric force for ions (F=qa*E)
-            
+            const double Ex_local = Ex[idx];
+            const double Ey_local = Ey[idx];
+
+            // Ions
             if (rho_ion[idx] > 1e-10) {
-                ux_ion[idx] += tau_ion * q_ion * Ex[idx] / rho_ion[idx];
-                uy_ion[idx] += tau_ion * q_ion * Ey[idx] / rho_ion[idx];
+                const double vx = ux_ion[idx];
+                const double vy = uy_ion[idx];
+
+                const double Fx = Z_ion* (-q_el) * (Ex_local + vy * Bz_ext);
+                const double Fy = Z_ion* (-q_el) * (Ey_local - vx * Bz_ext);
+
+                ux_ion[idx] += tau_ion * Fx / rho_ion[idx];
+                uy_ion[idx] += tau_ion * Fy / rho_ion[idx];
             }
+
+            // Electrons
             if (rho_el[idx] > 1e-10) {
-                ux_el[idx] -= tau_el * q_el * Ex[idx] / rho_el[idx];
-                uy_el[idx] -= tau_el * q_el * Ey[idx] / rho_el[idx];
+                const double vx = ux_el[idx];
+                const double vy = uy_el[idx];
+
+                const double Fx = q_el * (Ex_local + vy * Bz_ext);
+                const double Fy = q_el * (Ey_local - vx * Bz_ext);
+
+                ux_el[idx] += tau_el * Fx / rho_el[idx];
+                uy_el[idx] += tau_el * Fy / rho_el[idx];
             }
         }
     }
-    //Collision step (BGK)
+
+    // Collision step (BGK)
     #pragma omp parallel for collapse(3)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
@@ -210,6 +232,7 @@ void LBmethod::Collisions() {
         }
     }
 }
+
 
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
@@ -281,11 +304,16 @@ void LBmethod::Run_simulation() {
     
     // Set threads for this simulation
         omp_set_num_threads(num_cores);
-        
+        const int border = 10, label_height = 30;
+        const int tile_w = NX + 2 * border;
+        const int tile_h = NY + 2 * border + label_height;
+        const int frame_w = 3 * tile_w + 20;  // 3 tiles + legend (20px)
+        const int frame_h = 2 * tile_h;
         // VideoWriter setup
         const std::string video_filename = "simulation_plasma.mp4";
         const double fps = 10.0; // Frames per second for the video
-        video_writer.open(video_filename, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), fps, cv::Size(NX, NY));
+        video_writer.open(video_filename, cv::VideoWriter::fourcc('m','p','4','v'), fps, cv::Size(frame_w, frame_h));
+
 
         if (!video_writer.isOpened()) {
             std::cerr << "Error: Could not open the video writer." << std::endl;
@@ -293,16 +321,10 @@ void LBmethod::Run_simulation() {
         }
     
         for (size_t t=0; t<NSTEPS; ++t){
-            const double t_double = static_cast<double>(t);//avoid repeated type cast
-            
             SolvePoisson();
-            std::cout<<"ok poisson"<<std::endl;
             Collisions();
-            std::cout<<"ok collision"<<std::endl;
             Streaming();
-            std::cout<<"ok streaming"<<std::endl;
             UpdateMacro();
-            std::cout<<"ok update"<<std::endl;
             Visualization(t);
         }
     
@@ -311,137 +333,91 @@ void LBmethod::Run_simulation() {
 }
 
 void LBmethod::Visualization(size_t t) {
-        static cv::Mat velocity_magn_mat_ion;
-        static cv::Mat velocity_magn_mat_el;
-        static cv::Mat velocity_heatmap_ion;
-        static cv::Mat velocity_heatmap_el;
+    constexpr int border = 10;
+    constexpr int label_height = 30;
 
-        static cv::Mat density_mat_ion;
-        static cv::Mat density_mat_el;
-        static cv::Mat density_heatmap_ion;
-        static cv::Mat density_heatmap_el;
+    static cv::Mat velocity_magn_mat_ion, velocity_magn_mat_el;
+    static cv::Mat velocity_heatmap_ion, velocity_heatmap_el;
+    static cv::Mat density_mat_ion, density_mat_el;
+    static cv::Mat density_heatmap_ion, density_heatmap_el;
+    static cv::Mat combined_density_mat, combined_velocity_mat;
+    static cv::Mat combined_density_heatmap, combined_velocity_heatmap;
+    static cv::Mat output_frame;
 
-        static cv::Mat combined_density_mat;
-        static cv::Mat combined_velocity_mat;
-        static cv::Mat combined_density_heatmap;
-        static cv::Mat combined_velocity_heatmap;
+    if (t == 0) {
+        velocity_magn_mat_ion = cv::Mat(NY, NX, CV_32F);
+        velocity_magn_mat_el = cv::Mat(NY, NX, CV_32F);
+        density_mat_ion = cv::Mat(NY, NX, CV_32F);
+        density_mat_el = cv::Mat(NY, NX, CV_32F);
+        combined_density_mat = cv::Mat(NY, NX, CV_32F);
+        combined_velocity_mat = cv::Mat(NY, NX, CV_32F);
+    }
 
-        static cv::Mat output_frame;
+    // Fill raw data matrices
+    #pragma omp parallel for collapse(2)
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
+            const size_t idx = INDEX(x, y, NX);
 
+            const double ux_i = ux_ion[idx], uy_i = uy_ion[idx];
+            const double ux_e = ux_el[idx], uy_e = uy_el[idx];
+            const double rho_i = rho_ion[idx], rho_e = rho_el[idx];
 
-        // Initialize only when t == 0
-        if (t == 0) {
-        // Initialize the heatmaps with the same size as the grid
-            //OpenCV uses a row-major indexing
-            velocity_magn_mat_ion = cv::Mat(NY, NX, CV_32F);
-            velocity_magn_mat_el = cv::Mat(NY, NX, CV_32F);
+            velocity_magn_mat_ion.at<float>(y, x) = std::hypot(ux_i, uy_i);
+            velocity_magn_mat_el.at<float>(y, x) = std::hypot(ux_e, uy_e);
+            density_mat_ion.at<float>(y, x) = static_cast<float>(rho_i);
+            density_mat_el.at<float>(y, x) = static_cast<float>(rho_e);
 
-            density_mat_ion = cv::Mat(NY, NX, CV_32F);
-            density_mat_el = cv::Mat(NY, NX, CV_32F);
-    
-
-            // Create heatmap images (8 bit images)
-            velocity_heatmap_ion = cv::Mat(NY, NX, CV_8UC3);
-            velocity_heatmap_el = cv::Mat(NY, NX, CV_8UC3);
-
-            density_heatmap_ion = cv::Mat(NY, NX, CV_8UC3);
-            density_heatmap_el = cv::Mat(NY, NX, CV_8UC3);
-
-            combined_density_mat = cv::Mat(NY, NX, CV_32F);
-            combined_velocity_mat = cv::Mat(NY, NX, CV_32F);
-
-            combined_density_heatmap = cv::Mat(NY, NX, CV_8UC3);
-            combined_velocity_heatmap = cv::Mat(NY, NX, CV_8UC3);
-
-            output_frame = cv::Mat(2 * NY, 3 * NX, CV_8UC3);
+            combined_density_mat.at<float>(y, x) = static_cast<float>(rho_i - rho_e);
+            combined_velocity_mat.at<float>(y, x) = std::hypot(ux_i - ux_e, uy_i - uy_e);
         }
+    }
 
-        // Fill matrices with new data
-        #pragma omp parallel for collapse(2) schedule(static)
-        for (size_t x = 0; x < NX; ++x) {
-            for (size_t y = 0; y < NY; ++y) {
-                const size_t idx = INDEX(x, y, NX);
+    // Apply color maps
+    apply_colormap(velocity_magn_mat_ion, velocity_heatmap_ion, cv::COLORMAP_PLASMA);
+    apply_colormap(velocity_magn_mat_el, velocity_heatmap_el, cv::COLORMAP_PLASMA);
+    apply_colormap(density_mat_ion, density_heatmap_ion, cv::COLORMAP_JET);
+    apply_colormap(density_mat_el, density_heatmap_el, cv::COLORMAP_JET);
+    apply_colormap(combined_density_mat, combined_density_heatmap, cv::COLORMAP_JET);
+    apply_colormap(combined_velocity_mat, combined_velocity_heatmap, cv::COLORMAP_PLASMA);
 
-                const double ux_local_ion = ux_ion[idx];
-                const double uy_local_ion = uy_ion[idx];
-                velocity_magn_mat_ion.at<float>(y, x) = std::sqrt(ux_local_ion * ux_local_ion + uy_local_ion * uy_local_ion);
+    // Flip vertically
+    auto flipv = [](cv::Mat& m) { cv::flip(m, m, 0); };
+    flipv(velocity_heatmap_ion);
+    flipv(velocity_heatmap_el);
+    flipv(density_heatmap_ion);
+    flipv(density_heatmap_el);
+    flipv(combined_density_heatmap);
+    flipv(combined_velocity_heatmap);
 
-                const double ux_local_el = ux_el[idx];
-                const double uy_local_el = uy_el[idx];
-                velocity_magn_mat_el.at<float>(y, x) = std::sqrt(ux_local_el * ux_local_el + uy_local_el * uy_local_el);
+    // Helper: wrap with border and label
+    auto wrap_with_label = [&](const cv::Mat& src, const std::string& label) -> cv::Mat {
+        cv::Mat bordered;
+        cv::copyMakeBorder(src, bordered, border, border + label_height, border, border, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
+        cv::putText(bordered, label, cv::Point(border + 5, bordered.rows - 5), cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 1);
+        return bordered;
+    };
 
-                const double rho_local_ion = rho_ion[idx];
-                const double rho_local_el = rho_el[idx];
-                density_mat_ion.at<float>(y,x) =rho_local_ion;
-                density_mat_el.at<float>(y,x) =rho_local_el;
+    // Compose labeled frames
+    cv::Mat top_row, bottom_row;
+    cv::hconcat(std::vector<cv::Mat>{wrap_with_label(density_heatmap_ion, "rho Ions"), wrap_with_label(density_heatmap_el, "rho Electrons"), wrap_with_label(combined_density_heatmap, "Comb rho")}, top_row);
+    cv::hconcat(std::vector<cv::Mat>{wrap_with_label(velocity_heatmap_ion, "v Ions"), wrap_with_label(velocity_heatmap_el, "v Electrons"), wrap_with_label(combined_velocity_heatmap, "Comb v")}, bottom_row);
 
-                const double rho_diff= rho_local_ion - rho_local_el;
-                const double ux_diff= ux_local_ion - ux_local_el;
-                const double uy_diff= uy_local_ion - uy_local_el;
-                combined_density_mat.at<float>(y,x) = rho_diff; 
-                combined_velocity_mat.at<float>(y,x) = std::sqrt(ux_diff * ux_diff + uy_diff * uy_diff);
+    // Compose full visualization
+    cv::Mat grid;
+    cv::vconcat(std::vector<cv::Mat>{top_row, bottom_row}, grid);
 
+    // Add legend
+    cv::Mat legend(200, 20, CV_8UC3);  // tall vertical legend
+    for (int i = 0; i < legend.rows; ++i) {
+        legend.row(i).setTo(cv::Vec3b(255 * i / legend.rows, 255 * i / legend.rows, 255 * i / legend.rows));
+    }
+    cv::applyColorMap(legend, legend, cv::COLORMAP_JET);
+    cv::resize(legend, legend, cv::Size(20, grid.rows));  // same height as output
 
-            }
-        }
+    // Final layout: [ grid | legend ]
+    cv::hconcat(std::vector<cv::Mat>{grid, legend}, output_frame);
 
-        // Normalize the matrices to 0-255 for display
-        cv::normalize(velocity_magn_mat_ion, velocity_magn_mat_ion, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(velocity_magn_mat_el, velocity_magn_mat_el, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(density_mat_ion, density_mat_ion, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(density_mat_el, density_mat_el, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(combined_density_mat, combined_density_mat, 0, 255, cv::NORM_MINMAX);
-        cv::normalize(combined_velocity_mat, combined_velocity_mat, 0, 255, cv::NORM_MINMAX);
-
-        //8-bit images
-        velocity_magn_mat_ion.convertTo(velocity_magn_mat_ion, CV_8U);
-        velocity_magn_mat_el.convertTo(velocity_magn_mat_el, CV_8U);
-        density_mat_ion.convertTo(density_mat_ion, CV_8U);
-        density_mat_el.convertTo(density_mat_el, CV_8U);
-        combined_density_mat.convertTo(combined_density_mat, CV_8U);
-        combined_velocity_mat.convertTo(combined_velocity_mat, CV_8U);
-
-        // Apply color maps
-        cv::applyColorMap(velocity_magn_mat_ion, velocity_heatmap_ion, cv::COLORMAP_PLASMA);
-        cv::applyColorMap(velocity_magn_mat_el, velocity_heatmap_el, cv::COLORMAP_PLASMA);
-        cv::applyColorMap(density_mat_ion, density_heatmap_ion, cv::COLORMAP_JET);
-        cv::applyColorMap(density_mat_el, density_heatmap_el, cv::COLORMAP_JET);
-
-        cv::applyColorMap(combined_density_mat, combined_density_heatmap, cv::COLORMAP_JET);
-        cv::applyColorMap(combined_velocity_mat, combined_velocity_heatmap, cv::COLORMAP_PLASMA);
-
-        //Flip the image vertically (OpenCV works in the opposite way than our code)
-        cv::flip(velocity_heatmap_ion, velocity_heatmap_ion, 0); //flips along the x axis
-        cv::flip(velocity_heatmap_el, velocity_heatmap_el, 0);
-        cv::flip(density_heatmap_ion, density_heatmap_ion, 0);
-        cv::flip(density_heatmap_el, density_heatmap_el, 0);
-        cv::flip(combined_density_heatmap, combined_density_heatmap, 0);
-        cv::flip(combined_velocity_heatmap, combined_velocity_heatmap, 0);
-
-        cv::Mat top_row, bottom_row;
-        std::cout<<"ok";
-        cv::hconcat(std::vector<cv::Mat>{density_heatmap_ion, density_heatmap_el, combined_density_heatmap}, top_row);
-        cv::hconcat(std::vector<cv::Mat>{velocity_heatmap_ion, velocity_heatmap_el, combined_velocity_heatmap}, bottom_row);
-        cv::vconcat(std::vector<cv::Mat>{top_row, bottom_row}, output_frame(cv::Rect(0, 60, 3 * NX, 2 * NY)));
-
-        std::cout<<"ok";
-        // Add titles above each column
-        cv::putText(output_frame, "Density of Ions", cv::Point(NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-        cv::putText(output_frame, "Density of Electrons", cv::Point(3 * NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-        cv::putText(output_frame, "Combined Density", cv::Point(5 * NX / 4, 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-        cv::putText(output_frame, "Velocity of Ions", cv::Point(NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-        cv::putText(output_frame, "Velocity of Electrons", cv::Point(3 * NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-        cv::putText(output_frame, "Combined Velocity", cv::Point(5 * NX / 4, NY + 40), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
-
-        // Add a legend for the color maps
-        cv::Mat legend(20, 256, CV_8UC3);
-        for (int i = 0; i < 256; ++i) {
-            legend.col(i).setTo(cv::Vec3b(i, i, i)); // Grayscale gradient
-        }
-        cv::applyColorMap(legend, legend, cv::COLORMAP_JET); // Apply the same colormap
-        legend.copyTo(output_frame(cv::Rect(3 * NX + 20, 60, 256, 20)));
-
-        // Add frame to video
-        video_writer.write(output_frame);
-        
+    // Write to video
+    video_writer.write(output_frame);
 }
