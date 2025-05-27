@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Set executable permissions: chmod +x compile_and_run.sh
-# Run the script: ./compile_and_run.sh [number_of_cores]
+# Set executable permissions: chmod +x compile_and_run_plasma.sh
+# Run the script: ./compile_and_run_plasma.sh [number_of_cores]
 
 export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
 
