@@ -5,16 +5,18 @@
 
 int main(int argc, char* argv[]) {
     const size_t NSTEPS = 1000;       // Number of timesteps to simulate
-    const size_t NX = 100;           // Number of nodes in the x-direction
+    const size_t NX = 500;           // Number of nodes in the x-direction
     const size_t NY = NX;           // Number of nodes in the y-direction
-    const double Re = 100.0;             // Reynolds number
-    const double tau_ion=0.01;
-    const double tau_el=0.01;
+    const size_t Z_ion=1;
+    const size_t A_ion=1;
+    const double r_ion=2*1e-10; //m
+    const double tau_ion=0.6;
+    const double tau_el=1.0;
     const size_t ncores = std::stoi(argv[1]); // Take the number of cores from the first argument
 
     const auto start_time = std::chrono::high_resolution_clock::now();
 
-    LBmethod lb(NSTEPS, NX, NY, Re, ncores, tau_ion, tau_el);
+    LBmethod lb(NSTEPS, NX, NY, ncores, Z_ion, A_ion, r_ion, tau_ion, tau_el);
     lb.Initialize();
     lb.Run_simulation();
 
