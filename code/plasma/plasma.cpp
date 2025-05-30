@@ -134,7 +134,13 @@ void LBmethod::SolvePoisson() {
     // Poisson equation in SI units: \nabla^2 phi = -rho_c / eps_0
     // phi = electric potential (V), eps_0 = vacuum permittivity (F/m)
 
+    const double inveps=1.0/eps_0;
+    const double omega=1.8; //Over relaxation factor (1=Gauss-Seidal method, 1.5-1.9=Successive over relaxation )
+    const int max_iter=100000;
+    const double tol = 1e-4;  // Convergence tolerance
+
     std::vector<double> rho_c(NX * NY, 0.0);
+    static std::vector<double> rho_c_old(NX * NY, 0.0); //no need to be passed->static
 
     // Compute total charge density: rho_c = q_ion * rho_ion - q_el * rho_el
     #pragma omp parallel for collapse(2)
@@ -144,46 +150,183 @@ void LBmethod::SolvePoisson() {
             rho_c[idx] = Z_ion* (-q_el) * rho_ion[idx] - q_el * rho_el[idx];
         }
     }
+
+    double max_change = 0.0;
+
+    #pragma omp parallel for reduction(max:max_change)
+    for (size_t idx = 0; idx < NX * NY; ++idx) {
+        double delta = std::abs(rho_c[idx] - rho_c_old[idx]);
+        if (delta > max_change) max_change = delta;
+    }
+
     ///////Check for other methods to solve Poisson equation
-    // Solve Poisson equation using Jacobi iteration
-    double tol = 1e-6;  // Convergence tolerance
+    // Solve Poisson equation using Gauss-Seidel (/SOR)
+    const double threshold=10e3;
+
+    if (max_change > threshold) {
+        std::cout << "Large change in rho_c detected (Δρ = " << max_change << "), resetting phi." << std::endl;
+        std::fill(phi.begin(), phi.end(), 0.0);
+    }
+
     double max_error;
+    int iter = 0;
+
     do {
         max_error = 0.0;
 
         for (size_t x = 1; x < NX - 1; ++x) {
             for (size_t y = 1; y < NY - 1; ++y) {
-                const size_t idx = INDEX(x, y, NX);
-                phi_new[idx] = 0.25 * (
+                size_t idx = INDEX(x, y, NX);
+
+                double phi_old = phi[idx];
+
+                double phi_new_local = 0.25 * (
                     phi[INDEX(x + 1, y, NX)] +
                     phi[INDEX(x - 1, y, NX)] +
                     phi[INDEX(x, y + 1, NX)] +
                     phi[INDEX(x, y - 1, NX)] -
-                    rho_c[idx] / eps_0
+                    rho_c[idx] * inveps
                 );
-                max_error = std::max(max_error, std::abs(phi_new[idx] - phi[idx]));
+
+                // Gauss-Seidel (+overrelaxation)
+                phi[idx] = phi_old + omega * (phi_new_local - phi_old);
+                max_error = std::max(max_error, std::abs(phi[idx] - phi_old));
             }
         }
-        phi.swap(phi_new);
-    } while (max_error > tol);
+
+        // Dirichlet Boundary Conditions: φ = 0
+        for (size_t x = 0; x < NX; ++x) {
+            phi[INDEX(x, 0, NX)] = 0.0;
+            phi[INDEX(x, NY - 1, NX)] = 0.0;
+        }
+        for (size_t y = 0; y < NY; ++y) {
+            phi[INDEX(0, y, NX)] = 0.0;
+            phi[INDEX(NX - 1, y, NX)] = 0.0;
+        }
+
+        ++iter;
+
+        if (iter % 100 == 0) {
+            std::cout << "Poisson iter " << iter << ", max_error = " << max_error << std::endl;
+        }
+
+    } while (max_error > tol && iter < max_iter);
+
+    if (iter >= max_iter) {
+        std::cerr << "Warning: Poisson solver did not converge after " << max_iter << " iterations. Max error: " << max_error << std::endl;
+    }
+
+    // Verify charge density conservation for debug
+    double total_charge = 0.0;
+    for (size_t idx = 0; idx < NX * NY; ++idx){
+         total_charge += rho_c[idx];
+    }
+       
+    std::cout << "Total net charge in domain: " << total_charge << " C" << std::endl;
+    std::copy(rho_c.begin(), rho_c.end(), rho_c_old.begin());
+
+
+}
+
+void LBmethod::SolvePoisson_fft() {
+    //Periodic conditions ONLY
+
+    const double inveps = 1.0 / eps_0;
+
+    // Allocate FFTW arrays
+    fftw_complex *rho_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NX * NY);
+    fftw_complex *phi_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NX * NY);
+
+    fftw_plan forward_plan = fftw_plan_dft_r2c_2d(NX, NY, phi.data(), rho_hat, FFTW_ESTIMATE);
+    fftw_plan backward_plan = fftw_plan_dft_c2r_2d(NX, NY, phi_hat, phi.data(), FFTW_ESTIMATE);
+
+    std::vector<double> rho_c(NX * NY, 0.0);
+
+    // Compute charge density: rho_c = Z_ion * q_ion * rho_ion - q_el * rho_el
+    #pragma omp parallel for collapse(2)
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
+            size_t idx = INDEX(x, y, NX);
+            rho_c[idx] = Z_ion * (-q_el) * rho_ion[idx] + q_el * rho_el[idx]; //Qua ho messo un + perché qel è già negativa
+        }
+    }
+
+    // Copy rho_c into phi temporarily to use r2c FFT (input must be real)
+    std::copy(rho_c.begin(), rho_c.end(), phi.begin());
+
+    // FFT forward: rho_hat = FFT[rho_c]
+    fftw_execute_dft_r2c(forward_plan, phi.data(), rho_hat);
+
+    // Solve in Fourier space
+    for (size_t i = 0; i < NX; ++i) {
+        int kx = (i <= NX/2) ? i : (int)i - NX;
+        double kx2 = 4.0 * std::pow(std::sin(M_PI * kx / NX), 2);
+
+        for (size_t j = 0; j < NY; ++j) {
+            int ky = (j <= NY/2) ? j : (int)j - NY;
+            double ky2 = 4.0 * std::pow(std::sin(M_PI * ky / NY), 2);
+
+            double denom = (kx2 + ky2);
+            size_t idx = i * NY + j;
+
+            if (denom != 0.0) {
+                double scale = -1.0 / (inveps * denom);
+                phi_hat[idx][0] = rho_hat[idx][0] * scale;
+                phi_hat[idx][1] = rho_hat[idx][1] * scale;
+            } else {
+                phi_hat[idx][0] = 0.0; // remove DC offset (zero total potential)
+                phi_hat[idx][1] = 0.0;
+            }
+        }
+    }
+
+    // Inverse FFT: phi = IFFT[phi_hat]
+    fftw_execute_dft_c2r(backward_plan, phi_hat, phi.data());
+
+    // Normalize FFT result (FFTW doesn't normalize)
+    double norm_factor = 1.0 / (NX * NY);
+    #pragma omp parallel for
+    for (size_t idx = 0; idx < NX * NY; ++idx) {
+        phi[idx] *= norm_factor;
+    }
+
+    // Clean up
+    fftw_destroy_plan(forward_plan);
+    fftw_destroy_plan(backward_plan);
+    fftw_free(rho_hat);
+    fftw_free(phi_hat);
+
+    // Debug: check total charge (should be conserved)
+    double total_charge = 0.0;
+    for (size_t idx = 0; idx < NX * NY; ++idx) {
+        total_charge += rho_c[idx];
+    }
+    std::cout << "Total net charge in domain: " << total_charge << " C" << std::endl;
 }
 
 
 void LBmethod::Collisions() {
     // Compute electric field: E = -∇φ + E_ext
+
     std::vector<double> Ex(NX * NY, 0.0), Ey(NX * NY, 0.0);
 
     #pragma omp parallel for collapse(2)
-    for (size_t x = 1; x < NX - 1; ++x) {
-        for (size_t y = 1; y < NY - 1; ++y) {
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
             size_t idx = INDEX(x, y, NX);
-            //Ex[idx] = -(phi[INDEX(x + 1, y, NX)] - phi[INDEX(x - 1, y, NX)]) / 2.0 + Ex_ext;
-            //Ey[idx] = -(phi[INDEX(x, y + 1, NX)] - phi[INDEX(x, y - 1, NX)]) / 2.0 + Ey_ext;
-            Ex[idx]=Ex_ext;
-            Ey[idx]=Ey_ext;
+
+            // Apply periodic boundary conditions with modular arithmetic
+            size_t xp1 = (x + 1) % NX;
+            size_t xm1 = (x + NX - 1) % NX;
+            size_t yp1 = (y + 1) % NY;
+            size_t ym1 = (y + NY - 1) % NY;
+
+            Ex[idx] = -(phi[INDEX(xp1, y, NX)] - phi[INDEX(xm1, y, NX)]) / 2.0 + Ex_ext;
+            Ey[idx] = -(phi[INDEX(x, yp1, NX)] - phi[INDEX(x, ym1, NX)]) / 2.0 + Ey_ext;
         }
     }
 
+    // Collision step with Guo forcing term
     #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
@@ -193,25 +336,47 @@ void LBmethod::Collisions() {
             const double Ey_loc = Ey[idx];
 
             for (size_t i = 0; i < ndirections; ++i) {
+                const double F_ion = weight[i] * rho_ion[idx] * (1.0 - 1.0 / (2.0 * tau_ion)) * (
+                    3.0 * ((directionx[i] - ux_ion[idx]) * Z_ion * (-q_el) * Ex_loc / (A_ion * m_p) +
+                           (directiony[i] - uy_ion[idx]) * Z_ion * (-q_el) * Ey_loc / (A_ion * m_p)) +
+                    9.0 * (directionx[i] * ux_ion[idx] * directionx[i] * Z_ion * (-q_el) * Ex_loc / (A_ion * m_p) +
+                           directiony[i] * uy_ion[idx] * directiony[i] * Z_ion * (-q_el) * Ey_loc / (A_ion * m_p))
+                );
 
-                //From Guo's forcing term:
-                // F_i=w_i*(1-1/(2*tau_i))*((c_i-u_i)/(c_s^2)+c_i°u_i*c_i/(c_s^4))°a_i*rho_i
-                const double F_ion = weight[i]*rho_ion[idx]*(1.0-1.0/(2.0*tau_ion))*(
-                    3.0*((directionx[i]-ux_ion[idx])*Z_ion*(-q_el)*Ex_loc/(A_ion*m_p)+(directiony[i]-uy_ion[idx])*Z_ion*(-q_el)*Ey_loc/(A_ion*m_p))+
-                    9.0*(directionx[i]*ux_ion[idx]*directionx[i]*Z_ion*(-q_el)*Ex_loc/(A_ion*m_p)+directiony[i]*uy_ion[idx]*directiony[i]*Z_ion*(-q_el)*Ey_loc/(A_ion*m_p)));
+                const double F_el = weight[i] * rho_el[idx] * (1.0 - 1.0 / (2.0 * tau_el)) * (
+                    3.0 * ((directionx[i] - ux_el[idx]) * (q_el) * Ex_loc / (m_el) +
+                           (directiony[i] - uy_el[idx]) * (q_el) * Ey_loc / (m_el)) +
+                    9.0 * (directionx[i] * ux_el[idx] * directionx[i] * (q_el) * Ex_loc / (m_el) +
+                           directiony[i] * uy_el[idx] * directiony[i] * (q_el) * Ey_loc / (m_el))
+                );
 
-                const double F_el = weight[i]*rho_el[idx]*(1.0-1.0/(2.0*tau_el))*(
-                    3.0*((directionx[i]-ux_el[idx])*(q_el)*Ex_loc/(m_el)+(directiony[i]-uy_el[idx])*(q_el)*Ey_loc/(m_el))+
-                    9.0*(directionx[i]*ux_el[idx]*directionx[i]*(q_el)*Ex_loc/(m_el)+directiony[i]*uy_el[idx]*directiony[i]*(q_el)*Ey_loc/(m_el)));
-
-                const size_t idx = INDEX(x, y, i, NX, ndirections);
-                f_ion[idx] += -(f_ion[idx] - f_eq_ion[idx]) / tau_ion + F_ion;
-                f_el[idx]  += -(f_el[idx]  - f_eq_el[idx]) / tau_el + F_el;
+                const size_t fi_idx = INDEX(x, y, i, NX, ndirections);
+                f_ion[fi_idx] += -(f_ion[fi_idx] - f_eq_ion[fi_idx]) / tau_ion + F_ion;
+                f_el[fi_idx]  += -(f_el[fi_idx]  - f_eq_el[fi_idx]) / tau_el + F_el;
             }
         }
     }
 }
 
+void LBmethod::Streaming_periodic() {
+    // f(x,y,t+1) = f(x-cx, y-cy, t) con condizioni periodiche
+    #pragma omp parallel for collapse(3) schedule(static)
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
+            for (size_t i = 0; i < ndirections; ++i) {
+                // Origin coordinates (periodic wrapping)
+                size_t x_src = (x + NX - directionx[i]) % NX;
+                size_t y_src = (y + NY - directiony[i]) % NY;
+
+                f_temp_ion[INDEX(x, y, i, NX, ndirections)] = f_ion[INDEX(x_src, y_src, i, NX, ndirections)];
+                f_temp_el[INDEX(x, y, i, NX, ndirections)]  = f_el[INDEX(x_src, y_src, i, NX, ndirections)];
+            }
+        }
+    }
+
+    f_ion.swap(f_temp_ion);
+    f_el.swap(f_temp_el);
+}
 
 void LBmethod::Streaming() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
@@ -299,17 +464,27 @@ void LBmethod::Run_simulation() {
             std::cerr << "Error: Could not open the video writer." << std::endl;
             return;
         }
-    
+
+        SolvePoisson_fft(); 
+        UpdateMacro();
+
         for (size_t t=0; t<NSTEPS; ++t){
-            //SolvePoisson();// nabla^2 phi = -rho_c / eps_0 
-            //std::cout<<"Ok Poisson step "<<t<<std::endl;
-            Collisions();// f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
-            //std::cout<<"Ok Collisions step "<<t<<std::endl;
-            Streaming();// f(x,y,t+1)=f(x-cx,y-cy,t)
-            //std::cout<<"Ok Streaming step "<<t<<std::endl;
-            UpdateMacro();// rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
-            //std::cout<<"Ok UpdateMacro step "<<t<<std::endl;
+            Collisions();
+            Streaming_periodic();
+            UpdateMacro();
+            SolvePoisson_fft();
             Visualization(t);
+
+            // nabla^2 phi = -rho_c / eps_0 
+            //SolvePoisson();
+            //std::cout<<"Ok Poisson step "<<t<<std::endl;
+            //Collisions();// f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
+            //std::cout<<"Ok Collisions step "<<t<<std::endl;
+            //Streaming_periodic();// f(x,y,t+1)=f(x-cx,y-cy,t)
+            //std::cout<<"Ok Streaming step "<<t<<std::endl;
+            //UpdateMacro();// rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
+            //std::cout<<"Ok UpdateMacro step "<<t<<std::endl;
+            //Visualization(t);
             //std::cout<<"Ok Visualization step "<<t<<std::endl;
         }
     

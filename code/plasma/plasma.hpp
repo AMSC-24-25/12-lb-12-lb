@@ -11,6 +11,8 @@
 #include <opencv2/highgui.hpp> 
 #include <opencv2/videoio.hpp> 
 #include <filesystem>
+#include <fftw3.h>
+
 
 
 class LBmethod {
@@ -94,8 +96,10 @@ public:
     void Equilibrium();
     void UpdateMacro();
     void SolvePoisson();
+    void SolvePoisson_fft();
     void Collisions();
     void Streaming();
+    void Streaming_periodic();
     void Run_simulation();
     void Visualization(size_t t);
 };

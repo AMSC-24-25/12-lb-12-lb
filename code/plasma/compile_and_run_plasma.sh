@@ -25,7 +25,7 @@ echo "Running with $NUM_CORES cores"
 echo "Compiling the program..."
 g++-10 -O3 -Wall -Wextra -march=native -std=c++20 -fopenmp \
 $(pkg-config --cflags --libs opencv4) -o simulation_exec \
-main_plasma.cpp plasma.cpp -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -lm
+main_plasma.cpp plasma.cpp -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -lfftw3 -lm
 
 if [ $? -ne 0 ]; then
   echo "Compilation failed. Exiting."
