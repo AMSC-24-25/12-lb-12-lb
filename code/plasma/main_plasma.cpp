@@ -4,7 +4,7 @@
 #include <fstream>
 
 int main(int argc, char* argv[]) {
-    const size_t NSTEPS = 1000;       // Number of timesteps to simulate
+    const size_t NSTEPS = 100;       // Number of timesteps to simulate
     const size_t NX = 500;           // Number of nodes in the x-direction
     const size_t NY = NX;           // Number of nodes in the y-direction
     const size_t Z_ion=1;
