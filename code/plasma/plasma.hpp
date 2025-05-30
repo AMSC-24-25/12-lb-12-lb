@@ -35,7 +35,7 @@ private:
     const double eps_0=8.8541878128*1e-12;//F/m
     const double r_el=2.8179*1e-15;//m
     const double Bz_ext = 0.0;  // magnitude of magnetic field in z-direction
-    const double Ex_ext = 100.0;  // magnitude of electric field in x-direction
+    const double Ex_ext = 1e-8;  // magnitude of electric field in x-direction
     const double Ey_ext = 0.0;  // magnitude of electric field in x-direction
 
     // Directions and weights for D2Q9
