@@ -136,7 +136,7 @@ void LBmethod::SolvePoisson() {
 
     std::vector<double> rho_c(NX * NY, 0.0);
 
-    // Compute charge density: rho_c = q_ion * rho_ion - q_el * rho_el
+    // Compute total charge density: rho_c = q_ion * rho_ion - q_el * rho_el
     #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
@@ -144,7 +144,7 @@ void LBmethod::SolvePoisson() {
             rho_c[idx] = Z_ion* (-q_el) * rho_ion[idx] - q_el * rho_el[idx];
         }
     }
-
+    ///////Check for other methods to solve Poisson equation
     // Solve Poisson equation using Jacobi iteration
     double tol = 1e-6;  // Convergence tolerance
     double max_error;
@@ -170,64 +170,43 @@ void LBmethod::SolvePoisson() {
 
 
 void LBmethod::Collisions() {
-    // External magnetic field (assumed constant and perpendicular to 2D plane)
-
-    // Compute electric field from phi gradient
+    // Compute electric field: E = -∇φ + E_ext
     std::vector<double> Ex(NX * NY, 0.0), Ey(NX * NY, 0.0);
 
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(2)
     for (size_t x = 1; x < NX - 1; ++x) {
         for (size_t y = 1; y < NY - 1; ++y) {
-            const size_t idx = INDEX(x, y, NX);
-            Ex[idx] = -(phi[INDEX(x + 1, y, NX)] - phi[INDEX(x - 1, y, NX)]) / 2.0 + Ex_ext;
-            Ey[idx] = -(phi[INDEX(x, y + 1, NX)] - phi[INDEX(x, y - 1, NX)]) / 2.0 + Ey_ext;
+            size_t idx = INDEX(x, y, NX);
+            //Ex[idx] = -(phi[INDEX(x + 1, y, NX)] - phi[INDEX(x - 1, y, NX)]) / 2.0 + Ex_ext;
+            //Ey[idx] = -(phi[INDEX(x, y + 1, NX)] - phi[INDEX(x, y - 1, NX)]) / 2.0 + Ey_ext;
+            Ex[idx]=Ex_ext;
+            Ey[idx]=Ey_ext;
         }
     }
-    std::cout<<"phi="<< phi[0]<<" or "<< phi[100]<<" or "<< phi[800]<< " or "<<phi[1300]<< " or "<<phi[2000]<<std::endl;
 
-    // Apply electric and magnetic forces
-    #pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y, NX);
 
-            const double Ex_local = Ex[idx];
-            const double Ey_local = Ey[idx];
+            const double Ex_loc = Ex[idx];
+            const double Ey_loc = Ey[idx];
 
-            // Ions
-            if (rho_ion[idx] > 1e-10) {
-                const double vx = ux_ion[idx];
-                const double vy = uy_ion[idx];
-
-                const double Fx = Z_ion* (-q_el) * (Ex_local + vy * Bz_ext);
-                const double Fy = Z_ion* (-q_el) * (Ey_local - vx * Bz_ext);
-
-                ux_ion[idx] += tau_ion * Fx / rho_ion[idx];
-                uy_ion[idx] += tau_ion * Fy / rho_ion[idx];
-            }
-
-            // Electrons
-            if (rho_el[idx] > 1e-10) {
-                const double vx = ux_el[idx];
-                const double vy = uy_el[idx];
-
-                const double Fx = q_el * (Ex_local + vy * Bz_ext);
-                const double Fy = q_el * (Ey_local - vx * Bz_ext);
-
-                ux_el[idx] += tau_el * Fx / rho_el[idx];
-                uy_el[idx] += tau_el * Fy / rho_el[idx];
-            }
-        }
-    }
-
-    // Collision step (BGK)
-    #pragma omp parallel for collapse(3)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < ndirections; ++i) {
+
+                //From Guo's forcing term:
+                // F_i=w_i*(1-1/(2*tau_i))*((c_i-u_i)/(c_s^2)+c_i°u_i*c_i/(c_s^4))°a_i*rho_i
+                const double F_ion = weight[i]*rho_ion[idx]*(1.0-1.0/(2.0*tau_ion))*(
+                    3.0*((directionx[i]-ux_ion[idx])*Z_ion*(-q_el)*Ex_loc/(A_ion*m_p)+(directiony[i]-uy_ion[idx])*Z_ion*(-q_el)*Ey_loc/(A_ion*m_p))+
+                    9.0*(directionx[i]*ux_ion[idx]*directionx[i]*Z_ion*(-q_el)*Ex_loc/(A_ion*m_p)+directiony[i]*uy_ion[idx]*directiony[i]*Z_ion*(-q_el)*Ey_loc/(A_ion*m_p)));
+
+                const double F_el = weight[i]*rho_el[idx]*(1.0-1.0/(2.0*tau_el))*(
+                    3.0*((directionx[i]-ux_el[idx])*(q_el)*Ex_loc/(m_el)+(directiony[i]-uy_el[idx])*(q_el)*Ey_loc/(m_el))+
+                    9.0*(directionx[i]*ux_el[idx]*directionx[i]*(q_el)*Ex_loc/(m_el)+directiony[i]*uy_el[idx]*directiony[i]*(q_el)*Ey_loc/(m_el)));
+
                 const size_t idx = INDEX(x, y, i, NX, ndirections);
-                f_ion[idx] -= (f_ion[idx] - f_eq_ion[idx]) / tau_ion;
-                f_el[idx] -= (f_el[idx] - f_eq_el[idx]) / tau_el;
+                f_ion[idx] += -(f_ion[idx] - f_eq_ion[idx]) / tau_ion + F_ion;
+                f_el[idx]  += -(f_el[idx]  - f_eq_el[idx]) / tau_el + F_el;
             }
         }
     }
@@ -304,6 +283,7 @@ void LBmethod::Run_simulation() {
     
     // Set threads for this simulation
         omp_set_num_threads(num_cores);
+        //setting envirolement constant to plot properly (can e included in the function below if sure that it is ok)
         const int border = 10, label_height = 30;
         const int tile_w = NX + 2 * border;
         const int tile_h = NY + 2 * border + label_height;
@@ -321,11 +301,16 @@ void LBmethod::Run_simulation() {
         }
     
         for (size_t t=0; t<NSTEPS; ++t){
-            SolvePoisson();
-            Collisions();
-            Streaming();
-            UpdateMacro();
+            //SolvePoisson();// nabla^2 phi = -rho_c / eps_0 
+            //std::cout<<"Ok Poisson step "<<t<<std::endl;
+            Collisions();// f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
+            //std::cout<<"Ok Collisions step "<<t<<std::endl;
+            Streaming();// f(x,y,t+1)=f(x-cx,y-cy,t)
+            //std::cout<<"Ok Streaming step "<<t<<std::endl;
+            UpdateMacro();// rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
+            //std::cout<<"Ok UpdateMacro step "<<t<<std::endl;
             Visualization(t);
+            //std::cout<<"Ok Visualization step "<<t<<std::endl;
         }
     
         video_writer.release();
