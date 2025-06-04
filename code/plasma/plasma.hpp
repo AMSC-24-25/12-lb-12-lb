@@ -64,8 +64,11 @@ public:
     // Run the complete simulation (calls Initialize(), then loops on TimeSteps)
     void Run_simulation();
 
-    // (Optional) visualization hook, can be implemented to write frames out.
-    void Visualization(size_t t);
+    // Visualization function to see the movement in OpenCV.
+    void VisualizationDensity(size_t t);
+    void VisualizationVelocity(size_t t);
+    void VisualizationTemperature(size_t t);
+
 private:
     //──────────────────────────────────────────────────────────────────────────────
     // 1) “Raw” (SI) Inputs
@@ -92,7 +95,7 @@ private:
     static constexpr double e_charge_SI = 1.602176634e-19;// [C]
     static constexpr double epsilon0_SI = 8.854187817e-12;// [F/m]
     static constexpr double m_e_SI      = 9.10938356e-31; // [kg]
-    // Ion mass = A_ion * 1 u (u=1.66053906660e-27 kg)
+    // Ion mass = A_ion * 1 u (u=1.66053906660e-27 kg)  //Defined in the constructor
     static constexpr double u_SI        = 1.66053906660e-27; // [kg]
 
     //──────────────────────────────────────────────────────────────────────────────
@@ -111,6 +114,7 @@ private:
 
     // Relaxation times (to be set in constructor)
     double tau_e_latt, tau_i_latt, tau_e_i_latt, tau_i_e_latt;
+    double tau_Te_latt, tau_Ti_latt, kappa_e_latt, kappa_i_latt;
 
     // Converted E‐field in lattice units:
     //   E_latt = E_SI * (dt_SI^2 / dx_SI)
@@ -135,12 +139,21 @@ private:
     // Equilibrium distribution functions
     std::vector<double>   f_eq_e,    f_eq_e_i,
                          f_eq_i,    f_eq_i_e;
+    // Thermal distribution function
+    std::vector<double>   g_e,    g_temp_e,
+                         g_i,    g_temp_i;
+    // Equilibrium distribution functions
+    std::vector<double>   g_eq_e,    g_eq_e_i,
+                         g_eq_i,    g_eq_i_e;
 
     // Macroscopic moments (per cell)
     std::vector<double>   n_e, n_i;      // densities
     std::vector<double>   ux_e,  uy_e,       // velocities
                          ux_i,  uy_i,
                          ux_e_i, uy_e_i;
+    
+    // Temperature vectors
+    std::vector<double>  T_e,  T_i;
 
     // Electric potential & fields (per cell), in lattice units
     std::vector<double>   phi,   phi_new;
@@ -172,7 +185,7 @@ private:
     void Initialize();
 
     // (b) Compute equilibrium f_eq for given (ρ, u) and c_s^2
-    void computeFeq();
+    void computeEquilibrium();
     // (c) Compute forcing term (Guo) for given (u, cs2, qom_latt, Ex_cell, Ey_cell)
     void computeForceGuo(double ux, double uy,
                         double cs2,
@@ -185,11 +198,14 @@ private:
 
     // (e) Collision step (BGK + forcing) for both species
     void Collisions();
+    void ThermalCollisions();
 
     // (f) Streaming step, which calls one of:
     void Streaming();
     void Streaming_Periodic();
     void Streaming_BounceBack();
+
+    void ThermalStreaming_BounceBack();
 
     // (g) Poisson solvers:
     void SolvePoisson();
@@ -201,7 +217,16 @@ private:
     // (h) Compute equilibrium distributions for both species (called inside Collisions)
     // (i) Compute new E from φ (called inside SolvePoisson)
 
-    cv::VideoWriter video_writer;
+    cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
+    // Global‐range trackers:
+    
+
+    double vel_e_min_global = -1.5*1e-13, vel_e_max_global = 1.5*1e15;
+    double vel_i_min_global = -0.5*1e-18, vel_i_max_global = 1.5*1e18;
+
+    double temperature_min_global     = 100.0;
+    double temperature_max_global     = 1000.0;
+
     
 };
 
