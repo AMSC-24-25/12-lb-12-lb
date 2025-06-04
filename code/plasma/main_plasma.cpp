@@ -16,11 +16,11 @@ int main(int argc, char* argv[]) {
     const double Ly_SI = 1e-6;   // m
 
     // (b) Grid resolution:
-    const size_t NX = 1000;       // # nodes in x
-    const size_t NY = 1000;       // # nodes in y
+    const size_t NX = 500;       // # nodes in x
+    const size_t NY = 500;       // # nodes in y
 
     // (c) Number of time‐steps:
-    const size_t NSTEPS = 1000;
+    const size_t NSTEPS = 1001;
 
     // (d) Ion parameters:
     const size_t Z_ion = 1;                   // e.g. H⁺
@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
     const double dt_SI = 1e-12;               // 1/s
 
     // (f) Temperatures:
-    const double T_e_SI = 10000.0;              // electron temp [K]
+    const double T_e_SI = 700.0;              // electron temp [K]
     const double T_i_SI = 300.0;              // ion temp [K]
 
     // (g) External E‐field in SI [V/m]:
@@ -41,14 +41,14 @@ int main(int argc, char* argv[]) {
     // (h) Choose Poisson solver and BC type:
     const PoissonType poisson_solver = PoissonType::SOR;
     // Options:
-    // NONE
-    // GAUSS_SEIDEL
-    // SOR
-    // FFT
+    // • NONE
+    // • GAUSS_SEIDEL
+    // • SOR
+    // • FFT
     const BCType      bc_mode        = BCType::BOUNCE_BACK;
     // Options:
-    // PERIODIC
-    // BOUNCE_BACK
+    // • PERIODIC
+    // • BOUNCE_BACK
     const double      omega_sor      = 1.8;    // only used if SOR is selected
 
     // Define clock to evaluate time intervals
