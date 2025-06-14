@@ -12,8 +12,8 @@ int main(int argc, char* argv[]) {
     //────────────────────────────────────────────────────────────────────────────
 
     // (b) Grid resolution:
-    const size_t NX = 1000;       // # nodes in x
-    const size_t NY = 1000;       // # nodes in y
+    const size_t NX = 200;       // # nodes in x
+    const size_t NY = 200;       // # nodes in y
 
     // (c) Number of time‐steps:
     const size_t NSTEPS = 100; // total number of time steps
@@ -33,16 +33,17 @@ int main(int argc, char* argv[]) {
 
     // (g) External E‐field in SI [V/m]:
     const double Ex_SI = 1e4;     // External electric field along x [V/m]
-    const double Ey_SI = 0.0;     // External electric field along y [V/m]
+    const double Ey_SI = 1e4;     // External electric field along y [V/m]
 
     // (h) Choose Poisson solver and BC type:
-    const PoissonType poisson_solver = PoissonType::SOR;
+    const PoissonType poisson_solver = PoissonType::FFT;
     // Options:
     // • NONE
     // • GAUSS_SEIDEL
     // • SOR
     // • FFT
-    // • LBE
+    // • NPS
+    // • MG
     const BCType      bc_mode        = BCType::PERIODIC;
     // Options:
     // • PERIODIC
