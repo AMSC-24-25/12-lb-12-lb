@@ -134,30 +134,24 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Initialize() {
     // Initialize f=f_eq=weight at (ρ=1, u=0)
-    #pragma omp parallel for schedule(static)
-    for (size_t y = 1*NY/4; y < 3*NY/4; ++y) {
-            for (size_t x = 1*NY/4; x < 3*NX/4; ++x) {
-                const size_t idx = INDEX(x, y);
-                rho_e[idx] = rho_e_init; // Set initial electron density
-                T_e[idx] = T_e_init; // Set initial electron temperature
-                for (size_t i = 0; i < Q; ++i) {
-                    const size_t idx_3 = INDEX(x, y, i);
-                    f_e[idx_3] = f_eq_e[idx_3] = w[i] * m_e; // Equilibrium function for electrons
-                    g_e[idx_3] = g_eq_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
-                    f_eq_e_i[idx_3] = w[i] * m_e; // Equilibrium function for electron-ion interaction
-                }
+    #pragma omp parallel for collapse(2) schedule(static)
+    for (size_t x = 0; x < NX; ++x) {
+        for(size_t y = 0; y < NY; ++y){
+            const size_t idx = INDEX(x,y);
+            rho_e[idx] = rho_e_init; // Set initial electron density
+            T_e[idx] = T_e_init; // Set initial electron temperature
+            rho_i[idx] = rho_i_init; // Set initial ion density
+            T_i[idx] = T_i_init; // Set initial ion temperature
+            for (size_t i=0;i<Q;++i){
+                const size_t idx_3 = INDEX(x, y, i);
+                f_e[idx_3] = f_eq_e[idx_3] = w[i] * m_e; // Equilibrium function for electrons
+                g_e[idx_3] = g_eq_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
+                f_eq_e_i[idx_3] = w[i] * m_e; // Equilibrium function for electron-ion interaction
+                f_i[idx_3] = f_eq_i[idx_3] = w[i] * m_i; // Equilibrium function for ions
+                g_i[idx_3] = g_eq_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
+                f_eq_i_e[idx_3] = w[i] * m_i; // Equilibrium function for ion-electron interaction
             }
-            for (size_t x = 1*NY/4; x < 3*NX/4; ++x) {
-                const size_t idx = INDEX(x, y);
-                rho_i[idx] = rho_i_init; // Set initial ion density
-                T_i[idx] = T_i_init; // Set initial ion temperature
-                for (size_t i = 0; i < Q; ++i) {
-                    const size_t idx_3 = INDEX(x, y, i);
-                    f_i[idx_3] = f_eq_i[idx_3] = w[i] * m_i; // Equilibrium function for ions
-                    g_i[idx_3] = g_eq_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
-                    f_eq_i_e[idx_3] = w[i] * m_i; // Equilibrium function for ion-electron interaction
-                }
-            }
+        }
     }
 }
 //──────────────────────────────────────────────────────────────────────────────
@@ -208,7 +202,6 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         u2_e_i / (2.0 * cs2)
                     );
 
-                    //still yet to implement
                     g_eq_e[idx_3]=w[i]*T_e[idx]*(
                         1.0 +
                         (cu_e / cs2) +
@@ -333,9 +326,17 @@ void LBmethod::UpdateMacro() {
 //  Poisson dispatcher:
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::SolvePoisson() {
-    if (poisson_type == PoissonType::GAUSS_SEIDEL)  SolvePoisson_GS();
-    else if (poisson_type == PoissonType::SOR)      SolvePoisson_SOR();
-    else if (poisson_type == PoissonType::FFT)      SolvePoisson_fft();
+    if (poisson_type == PoissonType::GAUSS_SEIDEL){  
+        if(bc_type == BCType::PERIODIC) SolvePoisson_GS_Periodic();
+        else SolvePoisson_GS();
+    }
+    else if (poisson_type == PoissonType::SOR){  
+            if(bc_type == BCType::PERIODIC) SolvePoisson_SOR_Periodic();
+            else SolvePoisson_SOR();
+        }
+    else if (poisson_type == PoissonType::FFT && bc_type == BCType::PERIODIC)      SolvePoisson_fft();
+    else if (poisson_type == PoissonType::NPS && bc_type == BCType::PERIODIC) SolvePoisson_9point_Periodic();
+    else if (poisson_type == PoissonType::MG  && bc_type == BCType::PERIODIC) SolvePoisson_Multigrid_Periodic();
     // else if (poisson_type == PoissonType::NONE)    // No Poisson solver, use initial Ex, Ey
 }
 //──────────────────────────────────────────────────────────────────────────────
@@ -405,6 +406,60 @@ void LBmethod::SolvePoisson_GS() {
 }
 
 //──────────────────────────────────────────────────────────────────────────────
+//  Poisson solver: GS when BC are periodic for consistency.
+//──────────────────────────────────────────────────────────────────────────────
+
+void LBmethod::SolvePoisson_GS_Periodic() {
+    // Assunzione: rho_q[idx] è RHS in unità lattice: ∇² φ = - rho_q.
+    // Usare Gauss–Seidel iterativo in place su phi[], con BC periodiche.
+    const size_t maxIter = 5000;
+    const double tol = 1e-8;
+    // Inizializza phi: meglio partire da precedente se disponibile, altrimenti zero:
+    std::fill(phi.begin(), phi.end(), 0.0);
+
+    for (size_t iter = 0; iter < maxIter; ++iter) {
+        double maxErr = 0.0;
+        // Loop su tutti i nodi
+        for (size_t j = 0; j < NY; ++j) {
+            size_t jm1 = (j + NY - 1) % NY;
+            size_t jp1 = (j + 1) % NY;
+            for (size_t i = 0; i < NX; ++i) {
+                size_t im1 = (i + NX - 1) % NX;
+                size_t ip1 = (i + 1) % NX;
+                size_t idx = INDEX(i,j);
+                // Somma dei quattro vicini ortogonali (periodici)
+                double sumNb = phi[INDEX(ip1, j)] + phi[INDEX(im1, j)]
+                             + phi[INDEX(i, jp1)] + phi[INDEX(i, jm1)];
+                // Aggiornamento Gauss–Seidel:
+                double newPhi = 0.25 * (sumNb + rho_q[idx]);
+                double err = std::abs(newPhi - phi[idx]);
+                if (err > maxErr) maxErr = err;
+                phi[idx] = newPhi;
+            }
+        }
+        if (maxErr < tol) {
+            // convergenza
+            break;
+        }
+    }
+    // Calcola campo elettrico periodico:
+    // E_x = - (phi(i+1,j) - phi(i-1,j))/2
+    // E_y = - (phi(i,j+1) - phi(i,j-1))/2
+    for (size_t j = 0; j < NY; ++j) {
+        size_t jm1 = (j + NY - 1) % NY;
+        size_t jp1 = (j + 1) % NY;
+        for (size_t i = 0; i < NX; ++i) {
+            size_t im1 = (i + NX - 1) % NX;
+            size_t ip1 = (i + 1) % NX;
+            size_t idx = INDEX(i,j);
+            Ex[idx] = -0.5 * (phi[INDEX(ip1,j)] - phi[INDEX(im1,j)]);
+            Ey[idx] = -0.5 * (phi[INDEX(i,jp1)] - phi[INDEX(i,jm1)]);
+        }
+    }
+}
+
+
+//──────────────────────────────────────────────────────────────────────────────
 //  Poisson solver: SOR (over‐relaxed Gauss–Seidel).  Identical 5‐point
 //  stencil as GS, but φ_new = (1−ω) φ_old + ω φ_GS.  Stop on tol.
 //──────────────────────────────────────────────────────────────────────────────
@@ -414,6 +469,7 @@ void LBmethod::SolvePoisson_SOR() {
     const double tol = 1e-8;
     for(size_t iter=0; iter<maxIter; ++iter) {
         double maxErr = 0.0;
+        #pragma omp parallel for collapse(2) schedule(static) private(maxErr)
         for(size_t j=1; j<NY-1; ++j) {
             for(size_t i=1; i<NX-1; ++i) {
                 size_t idx = INDEX(i,j);
@@ -439,85 +495,389 @@ void LBmethod::SolvePoisson_SOR() {
         }
     }
     for(size_t i=0; i<NX; ++i) {
-        Ex[INDEX(i,0)]     = 0;
-        Ey[INDEX(i,0)]     = 0;
-        Ex[INDEX(i,NY-1)]  = 0;
-        Ey[INDEX(i,NY-1)]  = 0;
+        Ex[INDEX(i,0)]     = Ex[INDEX(i,1)];
+        Ey[INDEX(i,0)]     = Ex[INDEX(i,1)];
+        Ex[INDEX(i,NY-1)]  = Ex[INDEX(i,NY-2)];
+        Ey[INDEX(i,NY-1)]  = Ex[INDEX(i,NY-2)];
     }
     for(size_t j=0; j<NY; ++j) {
-        Ex[INDEX(0,j)]     = 0;
-        Ey[INDEX(0,j)]     = 0;
-        Ex[INDEX(NX-1,j)]  = 0;
-        Ey[INDEX(NX-1,j)]  = 0;
+        Ex[INDEX(0,j)]     = Ex[INDEX(1,j)];
+        Ey[INDEX(0,j)]     = Ex[INDEX(1,j)];
+        Ex[INDEX(NX-1,j)]  = Ex[INDEX(NX-2,j)];
+        Ey[INDEX(NX-1,j)]  = Ex[INDEX(NX-2,j)];
     }
 }
-void LBmethod::SolvePoisson_fft() {  ///huge revision needed for this one
-    //Periodic conditions ONLY
 
-    const double inveps = 1.0;
+void LBmethod::SolvePoisson_SOR_Periodic() {
+    const size_t maxIter = 5000;
+    const double tol = 1e-8;
+    double omega = omega_sor; // parametro della classe
 
-    // Allocate FFTW arrays
-    fftw_complex *rho_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NX * NY);
-    fftw_complex *phi_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NX * NY);
-
-    fftw_plan forward_plan = fftw_plan_dft_r2c_2d(NX, NY, phi.data(), rho_hat, FFTW_ESTIMATE);
-    fftw_plan backward_plan = fftw_plan_dft_c2r_2d(NX, NY, phi_hat, phi.data(), FFTW_ESTIMATE);
-
-
-    // Copy rho_c into phi temporarily to use r2c FFT (input must be real)
-    std::copy(rho_q.begin(), rho_q.end(), phi.begin());
-
-    // FFT forward: rho_hat = FFT[rho_c]
-    fftw_execute_dft_r2c(forward_plan, phi.data(), rho_hat);
-
-    // Solve in Fourier space
-    for (size_t i = 0; i < NX; ++i) {
-        int kx = (i <= NX/2) ? i : (int)i - NX;
-        double kx2 = 4.0 * std::sin(M_PI * kx / NX) * std::sin(M_PI * kx / NX);
-
+    std::fill(phi.begin(), phi.end(), 0.0);
+    for (size_t iter = 0; iter < maxIter; ++iter) {
+        double maxErr = 0.0;
         for (size_t j = 0; j < NY; ++j) {
-            int ky = (j <= NY/2) ? j : (int)j - NY;
-            double ky2 = 4.0 * std::sin(M_PI * ky / NY) * std::sin(M_PI * ky / NY);
+            size_t jm1 = (j + NY - 1) % NY;
+            size_t jp1 = (j + 1) % NY;
+            for (size_t i = 0; i < NX; ++i) {
+                size_t im1 = (i + NX - 1) % NX;
+                size_t ip1 = (i + 1) % NX;
+                size_t idx = INDEX(i,j);
+                double sumNb = phi[INDEX(ip1,j)] + phi[INDEX(im1,j)]
+                             + phi[INDEX(i,jp1)] + phi[INDEX(i,jm1)];
+                double gsPhi = 0.25 * (sumNb - rho_q[idx]);
+                double newPhi = (1.0 - omega)*phi[idx] + omega*gsPhi;
+                double err = std::abs(newPhi + phi[idx]);
+                if (err > maxErr) maxErr = err;
+                phi[idx] = newPhi;
+            }
+        }
+        if (maxErr < tol) break;
+    }
+    // Calcola campo:
+    for (size_t j = 0; j < NY; ++j) {
+        size_t jm1 = (j + NY - 1) % NY;
+        size_t jp1 = (j + 1) % NY;
+        for (size_t i = 0; i < NX; ++i) {
+            size_t im1 = (i + NX - 1) % NX;
+            size_t ip1 = (i + 1) % NX;
+            size_t idx = INDEX(i,j);
+            Ex[idx] = -0.5 * (phi[INDEX(ip1,j)] - phi[INDEX(im1,j)]);
+            Ey[idx] = -0.5 * (phi[INDEX(i,jp1)] - phi[INDEX(i,jm1)]);
+        }
+    }
+}
 
-            double denom = (kx2 + ky2);
-            const size_t idx = i * NY + j;
 
-            if (denom != 0.0) {
-                const double scale = -1.0 / (inveps * denom);
-                phi_hat[idx][0] = rho_hat[idx][0] * scale;
-                phi_hat[idx][1] = rho_hat[idx][1] * scale;
+
+
+void LBmethod::SolvePoisson_fft() {
+    // Assunzione: rho_q[i] è la carica in unità lattice. Carica netta deve essere (circa) zero.
+    // Se non zero, la componente k=0 sarà rimossa, il potenziale medio sarà 0.
+
+    // Alloca array FFTW
+    // Input: real array rho_q -> rho_hat (complex)
+    int NXf = static_cast<int>(NX);
+    int NYf = static_cast<int>(NY);
+    // FFTW r2c produces size NX x (NY/2+1) complex output per r2c 2d, ma possiamo usare dft_r2c_2d direttamente.
+    fftw_complex *rho_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NXf * (NYf/2 + 1));
+    fftw_complex *phi_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * NXf * (NYf/2 + 1));
+
+    // Allocate real arrays for input and output
+    // FFTW uses contiguous memory row-major: size NX*NY doubles
+    double *in = (double*) fftw_malloc(sizeof(double) * NXf * NYf);
+    double *out = (double*) fftw_malloc(sizeof(double) * NXf * NYf);
+
+    // Copy rho_q into in[]
+    for (size_t idx = 0; idx < NX*NY; ++idx) {
+        in[idx] = rho_q[idx];
+    }
+    // Create plans
+    fftw_plan plan_r2c = fftw_plan_dft_r2c_2d(NXf, NYf, in, rho_hat, FFTW_ESTIMATE);
+    fftw_plan plan_c2r = fftw_plan_dft_c2r_2d(NXf, NYf, phi_hat, out, FFTW_ESTIMATE);
+
+    // FFT r2c: in -> rho_hat
+    fftw_execute(plan_r2c);
+
+    // Risolvo in frequenza: per ogni kx,ky:
+    // Laplaciano discreto: in Fourier continuo su periodic: - ( (2-2cos(2π kx/NX)) + (2-2cos(2π ky/NY)) )
+    // Ma con spacing 1: ∇² -> -[ 4 sin^2(π kx/NX) + 4 sin^2(π ky/NY) ]
+    // Quindi il fattore in Fourier per phi_hat = rho_hat / ( - (termine) )
+    for (int i = 0; i < NXf; ++i) {
+        int kx = (i <= NXf/2) ? i : i - NXf;
+        double sinx = std::sin(M_PI * kx / NXf);
+        double kx2 = 4.0 * sinx * sinx;
+        for (int j = 0; j < (NYf/2 + 1); ++j) {
+            int ky = j; // in r2c, j=0..NY/2
+            if (j > NYf/2) ky = j - NYf; // ma per r2c j maxi NY/2
+            double siny = std::sin(M_PI * ky / NYf);
+            double ky2 = 4.0 * siny * siny;
+            double denom = kx2 + ky2;
+            size_t index = static_cast<size_t>(i)*(NYf/2 + 1) + j;
+            if (denom > 1e-15) {
+                // ∇² φ_hat = - denom * phi_hat = - rho_hat  => phi_hat = rho_hat / denom
+                phi_hat[index][0] = rho_hat[index][0] / denom;
+                phi_hat[index][1] = rho_hat[index][1] / denom;
             } else {
-                phi_hat[idx][0] = 0.0; // remove DC offset (zero total potential)
-                phi_hat[idx][1] = 0.0;
+                // kx=ky=0 mode: impongo phi_hat=0 (potenziale medio zero)
+                phi_hat[index][0] = 0.0;
+                phi_hat[index][1] = 0.0;
             }
         }
     }
 
-    // Inverse FFT: phi = IFFT[phi_hat]
-    fftw_execute_dft_c2r(backward_plan, phi_hat, phi.data());
+    // IFFT c2r: phi_hat -> out[]
+    fftw_execute(plan_c2r);
 
-    // Normalize FFT result (FFTW doesn't normalize)
-    double norm_factor = 1.0 / (NX * NY);
-    #pragma omp parallel for
-    for (size_t idx = 0; idx < NX * NY; ++idx) {
-        phi[idx] *= norm_factor;
+    // FFTW non normalizza l'iFFT, quindi dividiamo per NX*NY
+    double norm = 1.0 / (NX * NY);
+    for (size_t idx = 0; idx < NX*NY; ++idx) {
+        phi[idx] = out[idx] * norm;
     }
 
-    // Clean up
-    fftw_destroy_plan(forward_plan);
-    fftw_destroy_plan(backward_plan);
+    // Libera piani temporanei
+    fftw_destroy_plan(plan_r2c);
+    fftw_destroy_plan(plan_c2r);
+    fftw_free(in);
+    fftw_free(out);
     fftw_free(rho_hat);
     fftw_free(phi_hat);
 
-    // Debug: check total charge (should be conserved)
-    double total_charge = 0.0;
-    for (size_t idx = 0; idx < NX * NY; ++idx) {
-        total_charge += rho_q[idx];
+    // Calcola Ex, Ey periodici:
+    for (size_t j = 0; j < NY; ++j) {
+        size_t jm1 = (j + NY - 1) % NY;
+        size_t jp1 = (j + 1) % NY;
+        for (size_t i = 0; i < NX; ++i) {
+            size_t im1 = (i + NX - 1) % NX;
+            size_t ip1 = (i + 1) % NX;
+            size_t idx = INDEX(i,j);
+            Ex[idx] = -0.5 * (phi[INDEX(ip1,j)] - phi[INDEX(im1,j)]);
+            Ey[idx] = -0.5 * (phi[INDEX(i,jp1)] - phi[INDEX(i,jm1)]);
+        }
     }
-    total_charge=total_charge*e_charge_SI; // Convert to physical units
-    std::cout << "Total net charge in domain: " << total_charge << " C" << std::endl;
-    //Then it should compute the total electric field in every region
 }
+void LBmethod::SolvePoisson_9point_Periodic() {
+    // Assunzione: rho_q[idx] è RHS in unità lattice.
+    const size_t maxIter = 5000;
+    const double tol = 1e-8;
+    std::fill(phi.begin(), phi.end(), 0.0);
+
+    for (size_t iter = 0; iter < maxIter; ++iter) {
+        double maxErr = 0.0;
+        for (size_t j = 0; j < NY; ++j) {
+            size_t jm1 = (j + NY - 1) % NY;
+            size_t jp1 = (j + 1) % NY;
+            for (size_t i = 0; i < NX; ++i) {
+                size_t im1 = (i + NX - 1) % NX;
+                size_t ip1 = (i + 1) % NX;
+                // Indici diagonali periodici:
+                size_t ip1_jp1 = INDEX(ip1, jp1);
+                size_t im1_jp1 = INDEX(im1, jp1);
+                size_t ip1_jm1 = INDEX(ip1, jm1);
+                size_t im1_jm1 = INDEX(im1, jm1);
+                size_t idx = INDEX(i,j);
+                // Somma vicini ortogonali:
+                double sumOrto = phi[INDEX(ip1,j)] + phi[INDEX(im1,j)]
+                               + phi[INDEX(i,jp1)] + phi[INDEX(i,jm1)];
+                // Somma diagonali:
+                double sumDiag = phi[ip1_jp1] + phi[im1_jp1]
+                               + phi[ip1_jm1] + phi[im1_jm1];
+                // Aggiornamento GS con 9-point:
+                double newPhi = (4.0 * sumOrto + sumDiag + 6.0 * rho_q[idx]) / 20.0;
+                double err = std::abs(newPhi - phi[idx]);
+                if (err > maxErr) maxErr = err;
+                phi[idx] = newPhi;
+            }
+        }
+        if (maxErr < tol) break;
+    }
+    // Calcolo E:
+    for (size_t j = 0; j < NY; ++j) {
+        size_t jm1 = (j + NY - 1) % NY;
+        size_t jp1 = (j + 1) % NY;
+        for (size_t i = 0; i < NX; ++i) {
+            size_t im1 = (i + NX - 1) % NX;
+            size_t ip1 = (i + 1) % NX;
+            size_t idx = INDEX(i,j);
+            Ex[idx] = -0.5 * (phi[INDEX(ip1,j)] - phi[INDEX(im1,j)]);
+            Ey[idx] = -0.5 * (phi[INDEX(i,jp1)] - phi[INDEX(i,jm1)]);
+        }
+    }
+}
+///// MULTIGRID EXAMPLE
+
+// SUPPORT FUNCTIONS
+
+// Restrizione (full-weighting) da griglia fine (nx x ny) a grossa (nx/2 x ny/2)
+// phiFine e residuoFine sono dimensione nx*ny. residuoFine = RHSFine + Lap(phiFine).
+// Si crea array residuoGross di dimensione (nx/2)*(ny/2).
+void restrict_full_weighting_periodic(const std::vector<double>& residuoFine,
+                                      int nx, int ny,
+                                      std::vector<double>& residuoCoarse) {
+    int nxc = nx/2;
+    int nyc = ny/2;
+    residuoCoarse.assign(nxc * nyc, 0.0);
+    for (int J = 0; J < nyc; ++J) {
+        int j = 2*J;
+        int jm1 = (j + ny - 1) % ny;
+        int jp1 = (j + 1) % ny;
+        int jp2 = (j + 2) % ny;
+        int jm2 = (j + ny - 2) % ny;
+        for (int I = 0; I < nxc; ++I) {
+            int i = 2*I;
+            int im1 = (i + nx - 1) % nx;
+            int ip1 = (i + 1) % nx;
+            int ip2 = (i + 2) % nx;
+            int im2 = (i + nx - 2) % nx;
+            // Full-weighting: media pesata su 9x9 punti:
+            // residuoCoarse[I,J] = (1/16)*(4*residuoFine[i,j] + 2*(residuoFine[i+1,j]+residuoFine[i-1,j]+residuoFine[i,j+1]+residuoFine[i,j-1]) + residuoFine[i+1,j+1]+... );
+            double sum = 0.0;
+            // centro
+            sum += 4.0 * residuoFine[j*nx + i];
+            // ortogonali a distanza 1
+            sum += 2.0 * residuoFine[j*nx + ((i+1)%nx)];
+            sum += 2.0 * residuoFine[j*nx + ((i+nx-1)%nx)];
+            sum += 2.0 * residuoFine[((j+1)%ny)*nx + i];
+            sum += 2.0 * residuoFine[((j+ny-1)%ny)*nx + i];
+            // diagonali a distanza 1
+            sum += residuoFine[((j+1)%ny)*nx + ((i+1)%nx)];
+            sum += residuoFine[((j+1)%ny)*nx + ((i+nx-1)%nx)];
+            sum += residuoFine[((j+ny-1)%ny)*nx + ((i+1)%nx)];
+            sum += residuoFine[((j+ny-1)%ny)*nx + ((i+nx-1)%nx)];
+            residuoCoarse[J*nxc + I] = sum / 16.0;
+        }
+    }
+}
+
+// Prolungamento (bilinear) da griglia grossa (nx/2 x ny/2) a fine (nx x ny).
+// correzioneCoarse dim nxc*nyc, produce correzioneFine dim nx*ny.
+void prolongate_bilinear_periodic(const std::vector<double>& correzioneCoarse,
+                                  int nx, int ny,
+                                  std::vector<double>& correzioneFine) {
+    int nxc = nx/2;
+    int nyc = ny/2;
+    correzioneFine.assign(nx * ny, 0.0);
+    for (int J = 0; J < nyc; ++J) {
+        int j = 2*J;
+        int jp = (J + 1) % nyc;
+        for (int I = 0; I < nxc; ++I) {
+            int i = 2*I;
+            int ip = (I + 1) % nxc;
+            double c00 = correzioneCoarse[J*nxc + I];
+            double c10 = correzioneCoarse[J*nxc + ip];
+            double c01 = correzioneCoarse[jp*nxc + I];
+            double c11 = correzioneCoarse[jp*nxc + ip];
+            // assegnamenti a quattro punti della griglia fine
+            correzioneFine[j*nx + i] = c00;
+            correzioneFine[j*nx + ((i+1)%nx)] = 0.5*(c00 + c10);
+            correzioneFine[((j+1)%ny)*nx + i] = 0.5*(c00 + c01);
+            correzioneFine[((j+1)%ny)*nx + ((i+1)%nx)] = 0.25*(c00 + c10 + c01 + c11);
+        }
+    }
+}
+
+// Calcola residuo: r = RHS + Lap(phi). Stencil 5-point, BC periodiche.
+// Nx,ny dimensioni attuali. phi e rhs sono dimensione nx*ny.
+void computeResiduo5point_periodic(const std::vector<double>& phi,
+                                   const std::vector<double>& rhs,
+                                   int nx, int ny,
+                                   std::vector<double>& residuo) {
+    residuo.assign(nx*ny, 0.0);
+    for (int j = 0; j < ny; ++j) {
+        int jm1 = (j + ny - 1) % ny;
+        int jp1 = (j + 1) % ny;
+        for (int i = 0; i < nx; ++i) {
+            int im1 = (i + nx - 1) % nx;
+            int ip1 = (i + 1) % nx;
+            double lap = phi[j*nx + ip1] + phi[j*nx + im1]
+                       + phi[jp1*nx + i] + phi[jm1*nx + i]
+                       - 4.0 * phi[j*nx + i];
+            residuo[j*nx + i] = rhs[j*nx + i] + lap;
+        }
+    }
+}
+
+// Smoothing Gauss–Seidel/SOR 5-point su phi (dimensione nx*ny, BC periodiche):
+void smooth_GS5_periodic(std::vector<double>& phi,
+                         const std::vector<double>& rhs,
+                         int nx, int ny,
+                         int iterations, double omega) {
+    for (int it = 0; it < iterations; ++it) {
+        for (int j = 0; j < ny; ++j) {
+            int jm1 = (j + ny - 1) % ny;
+            int jp1 = (j + 1) % ny;
+            for (int i = 0; i < nx; ++i) {
+                int im1 = (i + nx - 1) % nx;
+                int ip1 = (i + 1) % nx;
+                double sumNb = phi[j*nx + ip1] + phi[j*nx + im1]
+                             + phi[jp1*nx + i] + phi[jm1*nx + i];
+                double gsPhi = 0.25 * (sumNb - rhs[j*nx + i]);
+                if (omega == 1.0) {
+                    phi[j*nx + i] = gsPhi;
+                } else {
+                    phi[j*nx + i] = (1.0 - omega)*phi[j*nx + i] + omega*gsPhi;
+                }
+            }
+        }
+    }
+}
+
+// NB: per semplicità usiamo 5-point. Per 9-point, cambiare computeResiduo e smooth.
+void MG_solve_recursive(std::vector<double>& phi, 
+                        const std::vector<double>& rhs, 
+                        int nx, int ny, 
+                        int preSmooth, int postSmooth, double omega) {
+    // Caso base: griglia molto piccola, risolvo direttamente con GS:
+    if (nx <= 16 || ny <= 16) {
+        smooth_GS5_periodic(phi, rhs, nx, ny, 100, omega);
+        return;
+    }
+    // 1) Pre-smoothing
+    smooth_GS5_periodic(phi, rhs, nx, ny, preSmooth, omega);
+
+    // 2) Calcolo residuo su griglia fine
+    std::vector<double> residuoFine;
+    computeResiduo5point_periodic(phi, rhs, nx, ny, residuoFine);
+
+    // 3) Restrizione residuo su griglia grossa
+    int nxc = nx/2;
+    int nyc = ny/2;
+    std::vector<double> rhsCoarse; // in multigrid per Poisson, RHS coarse = residuoFine restritto
+    restrict_full_weighting_periodic(residuoFine, nx, ny, rhsCoarse);
+
+    // 4) Allocazione phiCoarse inizialmente zero
+    std::vector<double> phiCoarse(nxc * nyc, 0.0);
+
+    // 5) Ricorsione
+    MG_solve_recursive(phiCoarse, rhsCoarse, nxc, nyc, preSmooth, postSmooth, omega);
+
+    // 6) Prolungamento correzione
+    std::vector<double> correzioneFine;
+    prolongate_bilinear_periodic(phiCoarse, nx, ny, correzioneFine);
+
+    // 7) Aggiorna phi fine: phi = phi + correzioneFine
+    for (int idx = 0; idx < nx*ny; ++idx) {
+        phi[idx] += correzioneFine[idx];
+    }
+
+    // 8) Post-smoothing
+    smooth_GS5_periodic(phi, rhs, nx, ny, postSmooth, omega);
+}
+
+// Metodo wrapper in LBmethod:
+void LBmethod::SolvePoisson_Multigrid_Periodic() {
+    // Assunzione: rho_q è RHS. 
+    // Copia in vettore locale di dimensione NX*NY:
+    std::vector<double> phiLocal(NX * NY, 0.0);
+    std::vector<double> rhsLocal = rho_q; // ∇²φ = -rho_q => nel residuo usiamo rhsLocal direttamente
+    // Chiamata multigrid: passare -rho_q o rho_q? 
+    // Poiché computeResiduo definisce residuo = rhs + Lap(phi), e Lap(phi)=sum-4φ,
+    // risolviamo ∇²φ = -rho_q => rhsLocal = rho_q * (-1). Per uniformità, invertiamo:
+    for (auto &v : rhsLocal) v = -v;
+
+    int preSmooth = 3;
+    int postSmooth = 3;
+    double omega = 1.0; // o 1.1–1.5 se SOR
+    MG_solve_recursive(phiLocal, rhsLocal, NX, NY, preSmooth, postSmooth, omega);
+
+    // Copio phiLocal in phi member:
+    for (size_t idx = 0; idx < NX*NY; ++idx) {
+        phi[idx] = phiLocal[idx];
+    }
+    // Calcolo Ex, Ey:
+    for (size_t j = 0; j < NY; ++j) {
+        size_t jm1 = (j + NY - 1) % NY;
+        size_t jp1 = (j + 1) % NY;
+        for (size_t i = 0; i < NX; ++i) {
+            size_t im1 = (i + NX - 1) % NX;
+            size_t ip1 = (i + 1) % NX;
+            size_t idx = INDEX(i,j);
+            Ex[idx] = -0.5 * (phi[INDEX(ip1,j)] - phi[INDEX(im1,j)]);
+            Ey[idx] = -0.5 * (phi[INDEX(i,jp1)] - phi[INDEX(i,jm1)]);
+        }
+    }
+}
+
 
 
 //──────────────────────────────────────────────────────────────────────────────
@@ -579,8 +939,8 @@ void LBmethod::ThermalCollisions() {
                 const double C_i = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti;
 
                 // Update distribution functions with Guo forcing term
-                g_temp_e[idx_3] = f_e[idx_3] + C_e;
-                g_temp_i[idx_3] = f_i[idx_3] + C_i;
+                g_temp_e[idx_3] = g_e[idx_3] + C_e;
+                g_temp_i[idx_3] = g_i[idx_3] + C_i;
             }
         }
     }
@@ -703,13 +1063,15 @@ void LBmethod::Run_simulation() {
     // Set threads for this simulation
     omp_set_num_threads(n_cores);
 
+    // Inizializza CSV time series
+    InitCSVTimeSeries();
 
     // Pre‐compute the frame sizes for each video:
     const int border       = 10;
     const int label_height = 30;
     const int tile_w       = NX + 2 * border;                // panel width
     const int tile_h       = NY + 2 * border + label_height; // panel height
-    const double fps       = 10.0; // frames per second for videos
+    const double fps       = 1.0; // frames per second for videos
 
     // --- Density‐video (2 panels side by side) ---
     {
@@ -718,14 +1080,14 @@ void LBmethod::Run_simulation() {
         int frame_w = 3 * tile_w + 2 * panel_width + 4 * border;
         int frame_h = tile_h;
         video_writer_density.open(
-            "density_video.mp4",
+            "video_density.mp4",
             cv::VideoWriter::fourcc('m','p','4','v'),
             fps,                        // fps
             cv::Size(frame_w, frame_h),
             true                        // isColor
         );
         if (!video_writer_density.isOpened()) {
-            std::cerr << "Cannot open density_video.mp4 for writing\n";
+            std::cerr << "Cannot open video_density.mp4 for writing\n";
             return;
         }
     }
@@ -736,14 +1098,14 @@ void LBmethod::Run_simulation() {
         int frame_h = 2 * (NY + 2 * border + label_height);          // 2 tiles in altezza
 
         video_writer_velocity.open(
-            "velocity_video.mp4",
+            "video_velocity.mp4",
             cv::VideoWriter::fourcc('m','p','4','v'),
             fps,
             cv::Size(frame_w, frame_h),
             true
         );
         if (!video_writer_velocity.isOpened()) {
-            std::cerr << "Cannot open velocity_video.mp4 for writing\n";
+            std::cerr << "Cannot open video_velocity.mp4 for writing\n";
             return;
         }
     }
@@ -755,14 +1117,14 @@ void LBmethod::Run_simulation() {
         int frame_w = 2 * tile_w;
         int frame_h = tile_h;
         video_writer_temperature.open(
-            "temperature_video.mp4",
+            "video_temperature.mp4",
             cv::VideoWriter::fourcc('m','p','4','v'),
             fps,
             cv::Size(frame_w, frame_h),
             true
         );
         if (!video_writer_temperature.isOpened()) {
-            std::cerr << "Cannot open temperature_video.mp4 for writing\n";
+            std::cerr << "Cannot open video_temperature.mp4 for writing\n";
             return;
         }
     }
@@ -813,97 +1175,7 @@ void LBmethod::Run_simulation() {
             std::cout <<"max rho_q (latt)= "<<*max_rho<<", rho_q (latt)= "<<*min_rho<<std::endl;
             std::cout <<std::endl;
         }
-        if(NX< 6){
-            std::cout<<"n_e= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<rho_e[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"n_i= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<rho_i[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"ux_e= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<ux_e[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"uy_e= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<uy_e[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"ux_i= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<ux_i[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"uy_i= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<uy_i[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"rho= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<rho_q[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-                std::cout<<"Ex= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<Ex[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"Ey= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<Ey[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-
-            std::cout<<"Te= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<T_e[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-            std::cout<<"Ti= "<<std::endl;
-            for (size_t x = 0; x < NX; ++x) {
-                for (size_t y = 0; y < NY; ++y) {
-                    std::cout<<T_i[INDEX(x,y)]<< " ";
-                }
-                std::cout<<std::endl;
-            }
-            std::cout<<std::endl;
-        }  
+        RecordCSVTimeStep(t);
         UpdateMacro(); // rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
         computeEquilibrium();
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
@@ -920,6 +1192,9 @@ void LBmethod::Run_simulation() {
     video_writer_density.release();
     video_writer_velocity.release();
     video_writer_temperature.release();
+
+    CloseCSVAndPlot();
+
     std::cout << "Video saved, simulation ended " << std::endl;
 }
 //──────────────────────────────────────────────────────────────────────────────
@@ -1096,4 +1371,309 @@ void LBmethod::VisualizationTemperature() {
     cv::hconcat(std::vector<cv::Mat>{w_Te, w_Ti}, grid);
 
     video_writer_temperature.write(grid);
+}
+
+void LBmethod::InitCSVTimeSeries() {
+    // Definisci 9 punti: centro e 8 attorno, quadrato lato NX/2
+    size_t cx = NX / 2;
+    size_t cy = NY / 2;
+    size_t dx = NX / 4;
+    size_t dy = NY / 4;
+    sample_points.clear();
+    sample_points.emplace_back(cx, cy);
+    sample_points.emplace_back(cx + dx, cy);
+    sample_points.emplace_back(cx - dx, cy);
+    sample_points.emplace_back(cx, cy + dy);
+    sample_points.emplace_back(cx, cy - dy);
+    sample_points.emplace_back(cx + dx, cy + dy);
+    sample_points.emplace_back(cx + dx, cy - dy);
+    sample_points.emplace_back(cx - dx, cy + dy);
+    sample_points.emplace_back(cx - dx, cy - dy);
+    // Apertura file e header
+    auto openAndHeader = [&](std::ofstream& fs, const std::string& name) {
+        fs.open("timeseries_" + name + ".csv");
+        if (!fs.is_open()) {
+            std::cerr << "Errore: non riesco ad aprire timeseries_" << name << ".csv\n";
+            return;
+        }
+        fs << "time";
+        for (size_t p = 0; p < sample_points.size(); ++p) {
+            size_t i = sample_points[p].first;
+            size_t j = sample_points[p].second;
+            fs << ",p" << p << "(" << i << "_" << j << ")";
+        }
+        fs << "\n";
+    };
+    openAndHeader(file_ux_e, "ux_e");
+    openAndHeader(file_uy_e, "uy_e");
+    openAndHeader(file_ue_mag, "ue_mag");
+    openAndHeader(file_ux_i, "ux_i");
+    openAndHeader(file_uy_i, "uy_i");
+    openAndHeader(file_ui_mag, "ui_mag");
+    openAndHeader(file_T_e, "T_e");
+    openAndHeader(file_T_i, "T_i");
+    openAndHeader(file_rho_e, "rho_e");
+    openAndHeader(file_rho_i, "rho_i");
+    openAndHeader(file_rho_q, "rho_q");
+    openAndHeader(file_Ex, "Ex");
+    openAndHeader(file_Ey, "Ey");
+    openAndHeader(file_E_mag, "E_mag");
+}
+
+void LBmethod::RecordCSVTimeStep(size_t t) {
+    // Per ciascun punto p, calcola valori
+    std::vector<double> ux_e_v(sample_points.size()), uy_e_v(sample_points.size()), ue_mag_v(sample_points.size());
+    std::vector<double> ux_i_v(sample_points.size()), uy_i_v(sample_points.size()), ui_mag_v(sample_points.size());
+    std::vector<double> T_e_v(sample_points.size()), T_i_v(sample_points.size());
+    std::vector<double> rho_e_v(sample_points.size()), rho_i_v(sample_points.size()), rho_q_v(sample_points.size());
+    std::vector<double> Ex_v(sample_points.size()), Ey_v(sample_points.size()), E_mag_v(sample_points.size());
+    for (size_t p = 0; p < sample_points.size(); ++p) {
+        size_t i = sample_points[p].first;
+        size_t j = sample_points[p].second;
+        size_t idx = INDEX(i,j);
+        // Elettroni
+        double ux_e_ = ux_e[idx];
+        double uy_e_ = uy_e[idx];
+        ux_e_v[p] = ux_e_;
+        uy_e_v[p] = uy_e_;
+        ue_mag_v[p] = std::sqrt(ux_e_*ux_e_ + uy_e_*uy_e_);
+        // Ioni
+        double ux_i_ = ux_i[idx];
+        double uy_i_ = uy_i[idx];
+        ux_i_v[p] = ux_i_;
+        uy_i_v[p] = uy_i_;
+        ui_mag_v[p] = std::sqrt(ux_i_*ux_i_ + uy_i_*uy_i_);
+        // Temperature
+        T_e_v[p] = T_e[idx];
+        T_i_v[p] = T_i[idx];
+        // Densità
+        rho_e_v[p] = rho_e[idx];
+        rho_i_v[p] = rho_i[idx];
+        rho_q_v[p] = rho_q[idx];
+        // Campo E
+        double Ex_ = Ex[idx];
+        double Ey_ = Ey[idx];
+        Ex_v[p] = Ex_;
+        Ey_v[p] = Ey_;
+        E_mag_v[p] = std::sqrt(Ex_*Ex_ + Ey_*Ey_);
+    }
+    auto writeLine = [&](std::ofstream& fs, const std::vector<double>& vec) {
+        if (!fs.is_open()) return;
+        fs << t;
+        for (double v : vec) {
+            fs << "," << v;
+        }
+        fs << "\n";
+    };
+    writeLine(file_ux_e, ux_e_v);
+    writeLine(file_uy_e, uy_e_v);
+    writeLine(file_ue_mag, ue_mag_v);
+    writeLine(file_ux_i, ux_i_v);
+    writeLine(file_uy_i, uy_i_v);
+    writeLine(file_ui_mag, ui_mag_v);
+    writeLine(file_T_e, T_e_v);
+    writeLine(file_T_i, T_i_v);
+    writeLine(file_rho_e, rho_e_v);
+    writeLine(file_rho_i, rho_i_v);
+    writeLine(file_rho_q, rho_q_v);
+    writeLine(file_Ex, Ex_v);
+    writeLine(file_Ey, Ey_v);
+    writeLine(file_E_mag, E_mag_v);
+}
+
+
+void LBmethod::CloseCSVAndPlot() {
+    // Chiudi file
+    file_ux_e.close();
+    file_uy_e.close();
+    file_ue_mag.close();
+    file_ux_i.close();
+    file_uy_i.close();
+    file_ui_mag.close();
+    file_T_e.close();
+    file_T_i.close();
+    file_rho_e.close();
+    file_rho_i.close();
+    file_rho_q.close();
+    file_Ex.close();
+    file_Ey.close();
+    file_E_mag.close();
+    // Genera PNG dai CSV
+    PlotCSVWithOpenCV("timeseries_ux_e.csv", "plot_ux_e.png", "ux_e");
+    PlotCSVWithOpenCV("timeseries_uy_e.csv", "plot_uy_e.png", "uy_e");
+    PlotCSVWithOpenCV("timeseries_ue_mag.csv", "plot_ue_mag.png", "|u_e|");
+    PlotCSVWithOpenCV("timeseries_ux_i.csv", "plot_ux_i.png", "ux_i");
+    PlotCSVWithOpenCV("timeseries_uy_i.csv", "plot_uy_i.png", "uy_i");
+    PlotCSVWithOpenCV("timeseries_ui_mag.csv", "plot_ui_mag.png", "|u_i|");
+    PlotCSVWithOpenCV("timeseries_T_e.csv", "plot_T_e.png", "T_e");
+    PlotCSVWithOpenCV("timeseries_T_i.csv", "plot_T_i.png", "T_i");
+    PlotCSVWithOpenCV("timeseries_rho_e.csv", "plot_rho_e.png", "rho_e");
+    PlotCSVWithOpenCV("timeseries_rho_i.csv", "plot_rho_i.png", "rho_i");
+    PlotCSVWithOpenCV("timeseries_rho_q.csv", "plot_rho_q.png", "rho_q");
+    PlotCSVWithOpenCV("timeseries_Ex.csv", "plot_Ex.png", "Ex");
+    PlotCSVWithOpenCV("timeseries_Ey.csv", "plot_Ey.png", "Ey");
+    PlotCSVWithOpenCV("timeseries_E_mag.csv", "plot_E_mag.png", "|E|");
+    std::cout << "Plots generated as PNG.\n";
+}
+
+
+void LBmethod::PlotCSVWithOpenCV(const std::string& csv_filename,
+                                 const std::string& png_filename,
+                                 const std::string& title) {
+    std::ifstream file(csv_filename);
+    if (!file.is_open()) {
+        std::cerr << "Impossibile aprire " << csv_filename << " per plotting.\n";
+        return;
+    }
+    std::string line;
+    // Leggi header
+    if (!std::getline(file, line)) return;
+    std::vector<std::string> headers;
+    {
+        std::stringstream ss(line);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            headers.push_back(item);
+        }
+    }
+    size_t Ncols = headers.size(); 
+    if (Ncols < 2) return;
+    // Leggi dati
+    std::vector<std::vector<double>> data(Ncols);
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        std::string item;
+        size_t col = 0;
+        while (std::getline(ss, item, ',')) {
+            if (col < Ncols) {
+                try {
+                    double v = std::stod(item);
+                    data[col].push_back(v);
+                } catch (...) {
+                    data[col].push_back(0.0);
+                }
+            }
+            ++col;
+        }
+    }
+    file.close();
+    size_t npts = data[0].size();
+    if (npts < 2) return;
+    // Trova min/max
+    double t_min = data[0].front();
+    double t_max = data[0].back();
+    double minV = 1e300, maxV = -1e300;
+    for (size_t c = 1; c < Ncols; ++c) {
+        for (double v : data[c]) {
+            if (v < minV) minV = v;
+            if (v > maxV) maxV = v;
+        }
+    }
+    if (minV == maxV) {
+        minV -= 1.0;
+        maxV += 1.0;
+    }
+    // Immagine
+    int width = 800, height = 600;
+    int margin_left = 80, margin_right = 40;
+    int margin_top = 60, margin_bottom = 80;
+    cv::Mat img(height, width, CV_8UC3, cv::Scalar(255,255,255));
+    // Origine: (margin_left, height - margin_bottom)
+    cv::Point origin(margin_left, height - margin_bottom);
+    cv::Point x_end(width - margin_right, height - margin_bottom);
+    cv::Point y_end(margin_left, margin_top);
+    // Disegna assi
+    cv::line(img, origin, x_end, cv::Scalar(0,0,0), 1);
+    cv::line(img, origin, y_end, cv::Scalar(0,0,0), 1);
+    // Titolo
+    cv::putText(img, title, cv::Point(margin_left, margin_top/2),
+                cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0,0,0), 2);
+    // Parametri di plotting
+    double plot_w = double(width - margin_left - margin_right);
+    double plot_h = double(height - margin_top - margin_bottom);
+    double x_scale = plot_w / (t_max - t_min);
+    double y_scale = plot_h / (maxV - minV);
+    // Disegna tick e etichette su asse X (time)
+    int nticks = 5;
+    for (int k = 0; k <= nticks; ++k) {
+        double t = t_min + (t_max - t_min) * k / nticks;
+        int x = int(margin_left + (t - t_min) * x_scale + 0.5);
+        int y0 = height - margin_bottom;
+        int y1 = y0 + 5; // tick verso il basso
+        cv::line(img, cv::Point(x, y0), cv::Point(x, y1), cv::Scalar(0,0,0), 1);
+        // Etichetta testuale
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(0) << t;
+        std::string txt = ss.str();
+        int baseline = 0;
+        cv::Size textSize = cv::getTextSize(txt, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+        cv::putText(img, txt, cv::Point(x - textSize.width/2, y1 + 15),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,0,0), 1);
+    }
+    // Disegna tick e etichette su asse Y (valore)
+    for (int k = 0; k <= nticks; ++k) {
+        double v = minV + (maxV - minV) * k / nticks;
+        int y = int(height - margin_bottom - (v - minV) * y_scale + 0.5);
+        int x0 = margin_left;
+        int x1 = margin_left - 5; // tick verso sinistra
+        cv::line(img, cv::Point(x0, y), cv::Point(x1, y), cv::Scalar(0,0,0), 1);
+        // Etichetta
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(2) << v;
+        std::string txt = ss.str();
+        int baseline=0;
+        cv::Size textSize = cv::getTextSize(txt, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+        // Pone testo a sinistra del tick
+        cv::putText(img, txt, cv::Point(x1 - textSize.width - 2, y + textSize.height/2),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,0,0), 1);
+    }
+    // Colori per curve
+    std::vector<cv::Scalar> colors = {
+        cv::Scalar(255,0,0),
+        cv::Scalar(0,128,0),
+        cv::Scalar(0,0,255),
+        cv::Scalar(255,165,0),
+        cv::Scalar(128,0,128),
+        cv::Scalar(0,255,255),
+        cv::Scalar(255,0,255),
+        cv::Scalar(128,128,0),
+        cv::Scalar(0,128,128)
+    };
+    // Disegna curve
+    for (size_t c = 1; c < Ncols; ++c) {
+        cv::Scalar col = colors[(c-1) % colors.size()];
+        std::vector<cv::Point> pts;
+        pts.reserve(npts);
+        for (size_t k = 0; k < npts; ++k) {
+            double t = data[0][k];
+            double v = data[c][k];
+            int x = int(margin_left + (t - t_min) * x_scale + 0.5);
+            int y = int(height - margin_bottom - (v - minV) * y_scale + 0.5);
+            pts.emplace_back(x, y);
+        }
+        for (size_t k = 1; k < pts.size(); ++k) {
+            cv::line(img, pts[k-1], pts[k], col, 1);
+        }
+    }
+    // Legenda
+    int legend_x = width - margin_right - 150;
+    int legend_y = margin_top + 10;
+    int line_h = 20;
+    for (size_t c = 1; c < Ncols; ++c) {
+        cv::Scalar col = colors[(c-1) % colors.size()];
+        cv::Point pt1(legend_x, legend_y + int((c-1)*line_h));
+        cv::Point pt2 = pt1 + cv::Point(15,15);
+        cv::rectangle(img, pt1, pt2, col, cv::FILLED);
+        cv::putText(img, headers[c], pt2 + cv::Point(5,12),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0,0,0), 1);
+    }
+    // Etichette assi
+    cv::putText(img, "time", cv::Point((margin_left + width - margin_right)/2, height - margin_bottom + 40),
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,0), 1);
+    cv::putText(img, title, cv::Point(10, (margin_top + height - margin_bottom)/2),
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,0), 1); // eventualmente ruotare se si vuole y-label ruotata
+
+    // Salva
+    cv::imwrite(png_filename, img);
 }
