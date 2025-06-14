@@ -1,0 +1,305 @@
+#ifndef LBM_H
+#define LBM_H
+
+#include <vector>
+#include <array>
+#include <utility>
+#include <string>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>        
+#include <opencv2/imgproc.hpp>   
+#include <opencv2/highgui.hpp> 
+#include <opencv2/videoio.hpp> 
+#include <filesystem>
+#include <fftw3.h>
+#include <omp.h>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
+
+//--------------------------------------------------------------------------------
+// Enumerations for choosing Poisson solver and Streaming/BC type
+//--------------------------------------------------------------------------------
+enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, LBE = 4 };
+enum class BCType      { PERIODIC = 0, BOUNCE_BACK = 1 };
+//--------------------------------------------------------------------------------
+// LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
+// All “physical” parameters are passed in SI units to the constructor, and inside
+// the constructor they are converted to lattice units.  After that, Run_simulation()
+// can be called to execute the time loop.
+//--------------------------------------------------------------------------------
+class LBmethod {
+public:
+    // Constructor: pass in *all* physical/SI parameters + grid‐size + time‐steps
+    //
+    //   NSTEPS       : number of time steps to run
+    //   NX, NY       : number of lattice nodes in x and y (grid size)
+    //   n_cores      : number of OpenMP threads (optional, can be ignored)
+    //   Z_ion, A_ion : ionic charge‐number and mass‐number (for computing ion mass)
+    //   r_ion        : ionic radius [m] (unused in this template but stored)
+    //
+    //   Lx_SI, Ly_SI   : physical domain size in x and y [m]
+    //   dt_SI          : physical time‐step [s]
+    //   T_e_SI, T_i_SI : electron and ion temperatures [K]
+    //   Ex_SI, Ey_SI   : uniform external E‐field [V/m] (can be overridden by Poisson solver)
+    //
+    //   poisson_type   : which Poisson solver to use (NONE, GAUSS_SEIDEL, or SOR)
+    //   bc_type        : which streaming/BC to use (PERIODIC or BOUNCE_BACK)
+    //   omega_sor      : over‐relaxation factor for SOR (only used if poisson_type==SOR)
+    //
+    LBmethod(const size_t    NSTEPS,
+             const size_t    NX,
+             const size_t    NY,
+             const size_t    n_cores,
+             const size_t    Z_ion,
+             const size_t    A_ion,
+             const double    r_ion,
+             const double    Ex_SI,
+             const double    Ey_SI,
+             const double    T_e_SI_init,
+             const double    T_i_SI_init,
+             const double    n_0_SI_init,
+             const PoissonType poisson_type,
+             const BCType      bc_type,
+             const double    omega_sor);
+
+    // Run the complete simulation (calls Initialize(), then loops on TimeSteps)
+    void Run_simulation();
+
+private:
+    //──────────────────────────────────────────────────────────────────────────────
+    // 1) “Raw” (SI) Inputs
+    //──────────────────────────────────────────────────────────────────────────────
+    const size_t  NSTEPS;       // total number of time steps
+    const size_t  NX, NY;       // grid dimensions
+    const size_t  n_cores;      // # of OpenMP threads (optional)
+    const size_t  Z_ion;        // ionic atomic number (e.g. Z=1 for H+)
+    const size_t  A_ion;        // ionic mass # (e.g. A=1 for H+)
+    const double  r_ion;        // ionic radius [m] (just stored, not used here)
+    const double    Ex_SI;
+    const double    Ey_SI;
+    const double    T_e_SI_init;
+    const double    T_i_SI_init;
+    const double    n_0_SI_init;
+    const PoissonType  poisson_type; // which Poisson solver to run
+    const BCType       bc_type;      // which streaming/BC we use
+    const double       omega_sor;    // over‐relaxation factor for SOR
+
+    //──────────────────────────────────────────────────────────────────────────────
+    // 2) Physical Constants (SI)
+    //──────────────────────────────────────────────────────────────────────────────
+    static constexpr double kB_SI       = 1.380649e-23;   // [J/K]
+    static constexpr double h_planck_SI = 6.62607015e-34;  // [Js]
+    static constexpr double e_charge_SI = 1.602176634e-19;// [C]
+    static constexpr double epsilon0_SI = 8.854187817e-12;// [F/m]
+    static constexpr double m_e_SI      = 9.10938356e-31; // [kg]
+    static constexpr double u_SI        = 1.66053906660e-27; // [kg]
+    static constexpr double m_p_SI      = 1.67262192595e-27; // [kg]
+    static constexpr double m_n_SI      = 1.67492749804e-27; // [kg]
+    static constexpr double r_el_SI     = 2.8179403267e-15; // [m] (classical electron radius)
+
+    const double m_i_SI = A_ion * u_SI; //[kg]
+    //──────────────────────────────────────────────────────────────────────────────
+    // Physical conversion quantities from SI to LU:
+    //──────────────────────────────────────────────────────────────────────────────
+    const double n0_SI = n_0_SI_init;
+
+    const double M0_SI = m_e_SI; // physical mass [kg]
+    const double T0_SI = T_e_SI_init; // physical temperature [K]
+    const double Q0_SI = e_charge_SI; // physical charge [C]
+    const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI)); // physical lenght = lambda_D [m]
+    const double t0_SI = 1.0 / std::sqrt(3.0 * n0_SI * Q0_SI * Q0_SI / (epsilon0_SI * M0_SI)); // physical time = rad(3)/w_p [s]
+    //other useful obtained scaling quantities
+    const double E0_SI = M0_SI*L0_SI/(Q0_SI*t0_SI*t0_SI); // physical electric field [V/m]
+    const double v0_SI = L0_SI / t0_SI; // physical velocity [m/s]
+    const double F0_SI = M0_SI * L0_SI / (t0_SI * t0_SI); // physical force [N]
+
+    //Collision parameters:
+    //const double nu_e_SI=n0_SI*e_charge_SI*e_charge_SI*e_charge_SI*e_charge_SI* std::log(std::sqrt(epsilon0_SI*kB_SI*T_e_SI_init/n0_SI*e_charge_SI*e_charge_SI)/(std::min(e_charge_SI*e_charge_SI/(4*M_PI*epsilon0_SI*kB_SI*T_e_SI_init),h_planck_SI/(2*M_PI*m_e_SI*std::sqrt(kB_SI*T_e_SI_init/m_e_SI)))))/ (12*M_PI*epsilon0_SI*epsilon0_SI*m_e_SI*m_e_SI*std::sqrt(kB_SI*kB_SI*kB_SI*T_e_SI_init*T_e_SI_init*T_e_SI_init/(m_e_SI*m_e_SI*m_e_SI)));
+
+
+    //──────────────────────────────────────────────────────────────────────────────
+    // 3) Lattice‐Unit Quantities rescaled here
+    //──────────────────────────────────────────────────────────────────────────────
+    // Sound‐speeds in lattice units from D2Q9 c_s^2=1/3
+    const double cs2 = kB_SI * T0_SI / M0_SI * t0_SI * t0_SI / (L0_SI * L0_SI);
+    
+    //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
+    //const double tau_e=nu_e/cs2+0.5;
+    // Relaxation times (to be set in constructor)
+    const double tau_e = 1.0, tau_i = 1.2, tau_e_i = 1.5;
+    const double tau_Te = 0.6, tau_Ti = 1.0, tau_Te_Ti = 2.0;
+
+    // Converted E‐field in lattice units:
+    const double Ex_ext = Ex_SI / E0_SI, Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
+
+    // Converted temperatures in lattice units:
+    const double T_e_init = T_e_SI_init / T0_SI, T_i_init = T_i_SI_init / T0_SI; // initial temperatures in lattice units
+
+    // mass in lattice units:
+    const double m_e = m_e_SI / M0_SI; // electron mass in lattice units
+    const double m_i = m_i_SI / M0_SI; // ion mass in electron masses (for convenience)
+
+    // Converted charge in lattice units:
+    const double q_e = - e_charge_SI / Q0_SI; // electron charge in lattice units
+    const double q_i = Z_ion * e_charge_SI / Q0_SI; // ion charge in lattice units
+
+    // Initial density in lattice unit
+    const double rho_e_init = m_e * n_0_SI_init / n0_SI; // electron density in lattice units
+    const double rho_i_init = m_i * n_0_SI_init / n0_SI / Z_ion; // ion density in lattice units. The idea behind /Z_ion is the quasi neutrality of the plamsa at the start
+
+    //──────────────────────────────────────────────────────────────────────────────
+    // 4) D2Q9 Setup
+    //──────────────────────────────────────────────────────────────────────────────
+    static constexpr size_t   Q = 9;
+    static const std::array<int, Q> cx; // = {0,1,0,-1,0,1,-1,-1,1};
+    static const std::array<int, Q> cy; // = {0,0,1,0,-1,1,1,-1,-1};
+    static const std::array<double, Q> w; // weights
+
+    static const std::array<int, Q> opp;  // opposite‐direction map for bounce‐back
+
+    //──────────────────────────────────────────────────────────────────────────────
+    // 5) Per‐Node (“lattice‐unit”) Fields
+    //──────────────────────────────────────────────────────────────────────────────
+    // Distribution functions: f_e[i + Q*(x + NX*y)], f_i[i + Q*(x + NX*y)]
+    std::vector<double>   f_e,    f_temp_e,
+                          f_i,    f_temp_i;
+    // Equilibrium distribution functions
+    std::vector<double>   f_eq_e,    f_eq_i,   
+                        f_eq_e_i,    f_eq_i_e;
+                         
+    // Thermal distribution function
+    std::vector<double>   g_e,    g_temp_e,
+                         g_i,    g_temp_i;
+    // Equilibrium distribution functions
+    std::vector<double>   g_eq_e,    g_eq_e_i,
+                         g_eq_i,    g_eq_i_e;
+
+    // Macroscopic moments (per cell)
+    std::vector<double>   rho_e, rho_i;      // densities
+    std::vector<double>   ux_e,  uy_e,       // velocities
+                         ux_i,  uy_i,
+                         ux_e_i, uy_e_i;
+    
+    // Temperature vectors
+    std::vector<double>  T_e,  T_i;
+
+    // Electric potential & fields (per cell), in lattice units
+    std::vector<double>   phi,   phi_new;
+    std::vector<double>   Ex,    Ey;         // self‐consistent E (overwrites Ex_latt_init)
+
+    // Charge density (per cell in lattice units)
+    std::vector<double>   rho_q; // dimensionless (#/cell * e_charge)
+
+    //──────────────────────────────────────────────────────────────────────────────
+    // 6) Private Methods
+    //──────────────────────────────────────────────────────────────────────────────
+    //Overload function to recover the index
+    inline size_t INDEX(size_t x, size_t y, size_t i) const {
+        return i + Q * (x + NX * y);
+    }
+    inline size_t INDEX(size_t x, size_t y) const {
+        return x + NX * y;
+    }
+
+
+    // Helper: create legend panel (JET colormap)
+    cv::Mat makeColorLegend(double min_val, double max_val, int height, int width = 40, int text_area = 60, int border = 10) {
+        cv::Mat gray(height, 1, CV_8U);
+        for (int i = 0; i < height; ++i)
+            gray.at<uchar>(i, 0) = 255 - (i * 255 / (height - 1));
+        cv::Mat colorbar;
+        cv::applyColorMap(gray, colorbar, cv::COLORMAP_JET);
+        cv::resize(colorbar, colorbar, cv::Size(width, height), 0, 0, cv::INTER_NEAREST);
+
+        cv::Mat panel(height + 2 * border, width + text_area, CV_8UC3, cv::Scalar(255, 255, 255));
+        colorbar.copyTo(panel(cv::Rect(border, border, width, height)));
+
+        auto putVal = [&](const std::string &txt, int y) {
+            cv::putText(panel, txt,
+                        cv::Point(border + width + 5, y),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                        cv::Scalar(0, 0, 0), 1);
+        };
+
+        std::ostringstream oss_max, oss_mid, oss_min;
+        oss_max << std::fixed << std::setprecision(2) << max_val;
+        oss_mid << std::fixed << std::setprecision(2) << 0.5 * (min_val + max_val);
+        oss_min << std::fixed << std::setprecision(2) << min_val;
+
+        putVal(oss_max.str(), border + 10);
+        putVal(oss_mid.str(), border + height / 2);
+        putVal(oss_min.str(), border + height - 5);
+
+        return panel;
+    }
+
+    // (a) Initialize all fields (set f = f_eq at t=0, zero φ, set E=Ex_latt_init)
+    void Initialize();
+
+    // (b) Compute equilibrium f_eq for given (ρ, u) and c_s^2
+    void computeEquilibrium();
+    
+    // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F
+    void UpdateMacro();
+
+    // (e) Collision step (BGK + forcing) for both species
+    void Collisions();
+    
+    void ThermalCollisions();
+
+    // (f) Streaming step, which calls one of:
+    void Streaming();
+    void Streaming_Periodic();
+    void Streaming_BounceBack();
+
+    void ThermalStreaming_BounceBack();
+
+    // (g) Poisson solvers:
+    void SolvePoisson();
+    void SolvePoisson_GS();  // Gauss–Seidel
+    void SolvePoisson_SOR(); // Successive Over‑Relaxation
+    void SolvePoisson_fft();
+    //add multigrid method
+
+    // Visualization function to see the movement in OpenCV.
+    void VisualizationDensity();
+    void VisualizationVelocity();
+    void VisualizationTemperature();
+
+    // (h) Compute equilibrium distributions for both species (called inside Collisions)
+    // (i) Compute new E from φ (called inside SolvePoisson)
+
+    cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
+    // Global‐range trackers for visualization:
+    // --- Density and charge visualization ranges
+    static constexpr double DENSITY_MIN = 0.8;
+    static constexpr double DENSITY_MAX = 1.2;
+    static constexpr double CHARGE_MIN  = 0.8;
+    static constexpr double CHARGE_MAX  = 1.2;
+
+    // --- Velocity visualization ranges
+    static constexpr double UX_E_MIN = -0.05;
+    static constexpr double UX_E_MAX =  0.05;
+    static constexpr double UY_E_MIN = -0.05;
+    static constexpr double UY_E_MAX =  0.05;
+    static constexpr double UE_MAG_MIN = 0.0;
+    static constexpr double UE_MAG_MAX = 0.05;
+
+    static constexpr double UX_I_MIN = -0.001;
+    static constexpr double UX_I_MAX =  0.001;
+    static constexpr double UY_I_MIN = -0.001;
+    static constexpr double UY_I_MAX =  0.001;
+    static constexpr double UI_MAG_MIN = 0.0;
+    static constexpr double UI_MAG_MAX = 0.001;
+
+    // --- Temperature visualization ranges
+    static constexpr double TEMP_E_MIN = 0.3;
+    static constexpr double TEMP_E_MAX = 1.0;
+    static constexpr double TEMP_I_MIN = 0.1;
+    static constexpr double TEMP_I_MAX = 0.5;
+
+    
+};
+
+#endif // LBMETHOD_H
