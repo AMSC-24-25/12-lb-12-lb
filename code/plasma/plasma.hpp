@@ -16,11 +16,13 @@
 #include <cmath>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
 
 //--------------------------------------------------------------------------------
 // Enumerations for choosing Poisson solver and Streaming/BC type
 //--------------------------------------------------------------------------------
-enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, LBE = 4 };
+enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4, MG=5};
 enum class BCType      { PERIODIC = 0, BOUNCE_BACK = 1 };
 //--------------------------------------------------------------------------------
 // LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
@@ -66,6 +68,21 @@ public:
     // Run the complete simulation (calls Initialize(), then loops on TimeSteps)
     void Run_simulation();
 
+    // Punti di campionamento
+    std::vector<std::pair<size_t,size_t>> sample_points;
+
+    // File streams per CSV
+    std::ofstream file_ux_e, file_uy_e, file_ue_mag;
+    std::ofstream file_ux_i, file_uy_i, file_ui_mag;
+    std::ofstream file_T_e, file_T_i;
+    std::ofstream file_rho_e, file_rho_i, file_rho_q;
+    std::ofstream file_Ex, file_Ey, file_E_mag;
+    
+    // Funzioni per gestione CSV e plotting
+    void InitCSVTimeSeries();
+    void RecordCSVTimeStep(size_t t);
+    void CloseCSVAndPlot();  // Chiude file e genera i PNG
+
 private:
     //──────────────────────────────────────────────────────────────────────────────
     // 1) “Raw” (SI) Inputs
@@ -107,8 +124,8 @@ private:
     const double M0_SI = m_e_SI; // physical mass [kg]
     const double T0_SI = T_e_SI_init; // physical temperature [K]
     const double Q0_SI = e_charge_SI; // physical charge [C]
-    const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI)); // physical lenght = lambda_D [m]
-    const double t0_SI = 1.0 / std::sqrt(3.0 * n0_SI * Q0_SI * Q0_SI / (epsilon0_SI * M0_SI)); // physical time = rad(3)/w_p [s]
+    const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI))*1e-2; // physical lenght = lambda_D [m]
+    const double t0_SI = 1.0 / std::sqrt(3.0 * n0_SI * Q0_SI * Q0_SI / (epsilon0_SI * M0_SI))*1e-2; // physical time = rad(3)/w_p [s]
     //other useful obtained scaling quantities
     const double E0_SI = M0_SI*L0_SI/(Q0_SI*t0_SI*t0_SI); // physical electric field [V/m]
     const double v0_SI = L0_SI / t0_SI; // physical velocity [m/s]
@@ -127,7 +144,7 @@ private:
     //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
     //const double tau_e=nu_e/cs2+0.5;
     // Relaxation times (to be set in constructor)
-    const double tau_e = 1.0, tau_i = 1.2, tau_e_i = 1.5;
+    const double tau_e = 0.55, tau_i = 0.7, tau_e_i = 1.0;
     const double tau_Te = 0.6, tau_Ti = 1.0, tau_Te_Ti = 2.0;
 
     // Converted E‐field in lattice units:
@@ -258,8 +275,13 @@ private:
     // (g) Poisson solvers:
     void SolvePoisson();
     void SolvePoisson_GS();  // Gauss–Seidel
+    void SolvePoisson_GS_Periodic();
     void SolvePoisson_SOR(); // Successive Over‑Relaxation
+    void SolvePoisson_SOR_Periodic();
     void SolvePoisson_fft();
+
+    void SolvePoisson_9point_Periodic();
+    void SolvePoisson_Multigrid_Periodic();
     //add multigrid method
 
     // Visualization function to see the movement in OpenCV.
@@ -270,28 +292,33 @@ private:
     // (h) Compute equilibrium distributions for both species (called inside Collisions)
     // (i) Compute new E from φ (called inside SolvePoisson)
 
+    // Funzione di utilità per disegnare il plot di un CSV in un PNG
+    void PlotCSVWithOpenCV(const std::string& csv_filename,
+                           const std::string& png_filename,
+                           const std::string& title);
+
     cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
     // Global‐range trackers for visualization:
     // --- Density and charge visualization ranges
-    static constexpr double DENSITY_MIN = 0.8;
-    static constexpr double DENSITY_MAX = 1.2;
-    static constexpr double CHARGE_MIN  = 0.8;
-    static constexpr double CHARGE_MAX  = 1.2;
+    static constexpr double DENSITY_MIN = 0.5;
+    static constexpr double DENSITY_MAX = 1.5;
+    static constexpr double CHARGE_MIN  = 0.5;
+    static constexpr double CHARGE_MAX  = 1.5;
 
     // --- Velocity visualization ranges
-    static constexpr double UX_E_MIN = -0.05;
-    static constexpr double UX_E_MAX =  0.05;
-    static constexpr double UY_E_MIN = -0.05;
-    static constexpr double UY_E_MAX =  0.05;
+    static constexpr double UX_E_MIN = -1e-8;
+    static constexpr double UX_E_MAX =  1e-8;
+    static constexpr double UY_E_MIN = -1e-10;
+    static constexpr double UY_E_MAX =  1e-10;
     static constexpr double UE_MAG_MIN = 0.0;
-    static constexpr double UE_MAG_MAX = 0.05;
+    static constexpr double UE_MAG_MAX = 5e-5;
 
-    static constexpr double UX_I_MIN = -0.001;
-    static constexpr double UX_I_MAX =  0.001;
-    static constexpr double UY_I_MIN = -0.001;
-    static constexpr double UY_I_MAX =  0.001;
+    static constexpr double UX_I_MIN = -1e-10;
+    static constexpr double UX_I_MAX =  1e-10;
+    static constexpr double UY_I_MIN = -1e-10;
+    static constexpr double UY_I_MAX =  1e-10;
     static constexpr double UI_MAG_MIN = 0.0;
-    static constexpr double UI_MAG_MAX = 0.001;
+    static constexpr double UI_MAG_MAX = 1e-8;
 
     // --- Temperature visualization ranges
     static constexpr double TEMP_E_MIN = 0.3;
