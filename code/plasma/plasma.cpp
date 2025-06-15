@@ -33,7 +33,9 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
                    const double    _Ey_SI,
                    const double    _T_e_SI_init,
                    const double    _T_i_SI_init,
+                   const double    _T_n_SI_init,
                    const double    _n_0_SI_init,
+                   const double    _n_n_SI_init,
                    const PoissonType _poisson_type,
                    const BCType      _bc_type,
                    const double    _omega_sor)
@@ -48,7 +50,9 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
       Ey_SI      (_Ey_SI),
       T_e_SI_init(_T_e_SI_init),
       T_i_SI_init(_T_i_SI_init),
+      T_n_SI_init(_T_n_SI_init),
       n_0_SI_init(_n_0_SI_init),
+      n_n_SI_init(_n_n_SI_init),
       poisson_type(_poisson_type),
       bc_type     (_bc_type),
       omega_sor   (_omega_sor)
@@ -70,28 +74,46 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
     f_i.assign(NX * NY * Q, 0.0);
     f_temp_i.assign(NX * NY * Q, 0.0);
     f_eq_i.assign(NX * NY * Q, 0.0);
+    f_n.assign(NX * NY * Q, 0.0);
+    f_temp_n.assign(NX * NY * Q, 0.0);
+    f_eq_n.assign(NX * NY * Q, 0.0);
     //if needed
     f_eq_e_i.assign(NX * NY * Q, 0.0);
     f_eq_i_e.assign(NX * NY * Q, 0.0);
+    f_eq_e_n.assign(NX * NY * Q, 0.0);
+    f_eq_n_e.assign(NX * NY * Q, 0.0);
+    f_eq_i_n.assign(NX * NY * Q, 0.0);
+    f_eq_n_i.assign(NX * NY * Q, 0.0);
 
     g_e.assign(NX * NY * Q, 0.0);
     g_i.assign(NX * NY * Q, 0.0);
+    g_n.assign(NX * NY * Q, 0.0);
     g_eq_e.assign(NX * NY * Q, 0.0);
     g_eq_i.assign(NX * NY * Q, 0.0);
+    g_eq_n.assign(NX * NY * Q, 0.0);
     g_temp_e.assign(NX * NY * Q, 0.0);
     g_temp_i.assign(NX * NY * Q, 0.0);
+    g_temp_n.assign(NX * NY * Q, 0.0);
 
     rho_e.assign(NX * NY, 0.0);
     rho_i.assign(NX * NY, 0.0);
+    rho_n.assign(NX * NY, 0.0);
     ux_e.assign(NX * NY, 0.0);
     uy_e.assign(NX * NY, 0.0);
     ux_i.assign(NX * NY, 0.0);
     uy_i.assign(NX * NY, 0.0);
+    ux_n.assign(NX * NY, 0.0);
+    uy_n.assign(NX * NY, 0.0);
     ux_e_i.assign(NX * NY, 0.0);
     uy_e_i.assign(NX * NY, 0.0);
+    ux_e_n.assign(NX * NY, 0.0);
+    uy_e_n.assign(NX * NY, 0.0);
+    ux_i_n.assign(NX * NY, 0.0);
+    uy_i_n.assign(NX * NY, 0.0);
 
     T_e.assign(NX * NY, 0.0);
     T_i.assign(NX * NY, 0.0);
+    T_n.assign(NX * NY, 0.0);
 
     phi.assign(NX * NY, 0.0);
     phi_new.assign(NX * NY, 0.0);
@@ -134,22 +156,48 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Initialize() {
     // Initialize f=f_eq=weight at (ρ=1, u=0)
-    #pragma omp parallel for collapse(2) schedule(static)
+    const int x_e_min = 400, x_e_max = 401;
+    const int x_i_min = 500, x_i_max = 501;
+    const int N_e = x_e_max - x_e_min + 1;
+    const int N_i = x_i_max - x_i_min + 1;
+
+    const double rho_i_adjusted = - (q_e * rho_e_init * N_e) / (q_i * N_i);
+
+    //#pragma omp parallel for collapse(2) schedule(static)
     for (size_t x = 0; x < NX; ++x) {
         for(size_t y = 0; y < NY; ++y){
             const size_t idx = INDEX(x,y);
-            rho_e[idx] = rho_e_init; // Set initial electron density
-            T_e[idx] = T_e_init; // Set initial electron temperature
-            rho_i[idx] = rho_i_init; // Set initial ion density
-            T_i[idx] = T_i_init; // Set initial ion temperature
+            rho_n[idx] = rho_n_init; // Set initial neutral density
+            T_n[idx] = T_n_init; // Set initial neutral temperature
+            
+            double rho_e_local = (x >= x_e_min && x <= x_e_max) ? rho_e_init : 0.0;
+            double rho_i_local = (x >= x_i_min && x <= x_i_max) ? rho_i_adjusted : 0.0;
+
+            rho_e[idx] = rho_e_local;
+            rho_i[idx] = rho_i_local;
+            T_e[idx] = T_e_init;
+            T_i[idx] = T_i_init;
+
             for (size_t i=0;i<Q;++i){
                 const size_t idx_3 = INDEX(x, y, i);
-                f_e[idx_3] = f_eq_e[idx_3] = w[i] * m_e; // Equilibrium function for electrons
+
+                double f_e_local = (x >= x_e_min && x <= x_e_max) ? w[i] * m_e : 0.0;
+                double f_i_local = (x >= x_i_min && x <= x_i_max) ? w[i] * m_i : 0.0;
+                f_e[idx_3] = f_eq_e[idx_3] = f_e_local; // Equilibrium function for electrons
                 g_e[idx_3] = g_eq_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
-                f_eq_e_i[idx_3] = w[i] * m_e; // Equilibrium function for electron-ion interaction
-                f_i[idx_3] = f_eq_i[idx_3] = w[i] * m_i; // Equilibrium function for ions
+                
+                f_i[idx_3] = f_eq_i[idx_3] = f_i_local; // Equilibrium function for ions
                 g_i[idx_3] = g_eq_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
+                
+                f_n[idx_3] = f_eq_n[idx_3] = w[i] * m_n; // Equilibrium function for neutrals
+                g_n[idx_3] = g_eq_n[idx_3] = w[i] * T_n_init; // Thermal function for neutrals
+                
                 f_eq_i_e[idx_3] = w[i] * m_i; // Equilibrium function for ion-electron interaction
+                f_eq_e_i[idx_3] = w[i] * m_e; // Equilibrium function for electron-ion interaction
+                f_eq_n_e[idx_3] = w[i] * m_n; // Equilibrium function for neutral-electron interaction
+                f_eq_e_n[idx_3] = w[i] * m_e; // Equilibrium function for electron-neutral interaction
+                f_eq_n_i[idx_3] = w[i] * m_n; // Equilibrium function for neutral-ion interaction
+                f_eq_i_n[idx_3] = w[i] * m_i; // Equilibrium function for ion-neutral interaction
             }
         }
     }
@@ -159,22 +207,28 @@ void LBmethod::Initialize() {
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe can be used as a function
     // Compute the equilibrium distribution function f_eq
-    #pragma omp parallel for collapse(2) schedule(static)
+    //#pragma omp parallel for collapse(2) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y); // Get 1D index for 2D point (x, y)
                 const double u2_e = ux_e[idx] * ux_e[idx] + uy_e[idx] * uy_e[idx]; // Square of the speed magnitude
-                const double u2_i = ux_i[idx] * ux_i[idx] + uy_i[idx] * uy_i[idx]; 
+                const double u2_i = ux_i[idx] * ux_i[idx] + uy_i[idx] * uy_i[idx];
+                const double u2_n = ux_n[idx] * ux_n[idx] + uy_n[idx] * uy_n[idx]; 
                 const double u2_e_i = ux_e_i[idx] * ux_e_i[idx] + uy_e_i[idx] * uy_e_i[idx]; // Square of the speed magnitude for electron-ion interaction
+                const double u2_e_n = ux_e_n[idx] * ux_e_n[idx] + uy_e_n[idx] * uy_e_n[idx]; // Square of the speed magnitude for electron-neutral interaction
+                const double u2_i_n = ux_i_n[idx] * ux_i_n[idx] + uy_i_n[idx] * uy_i_n[idx]; // Square of the speed magnitude for ion-neutral interaction
                 const double den_e = rho_e[idx]; // Electron density
                 const double den_i = rho_i[idx]; // Ion density
+                const double den_n = rho_n[idx]; // Neutral density
                 
                 for (size_t i = 0; i < Q; ++i) {
                     const size_t idx_3=INDEX(x, y, i);
                     const double cu_e = cx[i]*ux_e[idx] +cy[i]*uy_e[idx]; // Dot product (c_i · u)
                     const double cu_i = cx[i]*ux_i[idx] +cy[i]*uy_i[idx];
+                    const double cu_n = cx[i]*ux_n[idx] +cy[i]*uy_n[idx];
                     const double cu_e_i = cx[i]*ux_e_i[idx] +cy[i]*uy_e_i[idx]; // Dot product (c_i · u) for electron-ion interaction
-                    
+                    const double cu_e_n = cx[i]*ux_e_n[idx] +cy[i]*uy_e_n[idx]; // Dot product (c_i · u) for electron-neutral interaction
+                    const double cu_i_n = cx[i]*ux_i_n[idx] +cy[i]*uy_i_n[idx]; // Dot product (c_i · u) for ion-neutral interaction
                     // Compute f_eq from discretization of Maxwell Boltzmann distribution function
                     f_eq_e[idx_3]= w[i]*den_e*(
                         1.0 +
@@ -187,6 +241,12 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         (cu_i / cs2) +
                         (cu_i * cu_i) / (2.0 * cs2 * cs2) -
                         u2_i / (2.0 * cs2)
+                    );
+                    f_eq_n[idx_3]= w[i]*den_n*(
+                        1.0 +
+                        (cu_n / cs2) +
+                        (cu_n * cu_n) / (2.0 * cs2 * cs2) -
+                        u2_n / (2.0 * cs2)
                     );
 
                     f_eq_e_i[idx_3]= w[i]*den_e*(
@@ -201,6 +261,30 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
                         u2_e_i / (2.0 * cs2)
                     );
+                    f_eq_e_n[idx_3]= w[i]*den_e*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    f_eq_n_e[idx_3]= w[i]*den_n*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    f_eq_i_n[idx_3]= w[i]*den_i*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
+                    f_eq_n_i[idx_3]= w[i]*den_n*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
 
                     g_eq_e[idx_3]=w[i]*T_e[idx]*(
                         1.0 +
@@ -213,6 +297,12 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         (cu_i / cs2) +
                         (cu_i * cu_i ) / (2.0 * cs2 *cs2) -
                         u2_i / (2.0 * cs2)
+                    );
+                    g_eq_n[idx_3]=w[i]*T_n[idx]*(
+                        1.0 +
+                        (cu_n / cs2) +
+                        (cu_n * cu_n ) / (2.0 * cs2 *cs2) -
+                        u2_n / (2.0 * cs2)
                     );
                 }
             }
@@ -238,12 +328,17 @@ void LBmethod::UpdateMacro() {
     double uy_loc_i = 0.0;
     double T_loc_i = 0.0;
 
+    double rho_loc_n = 0.0;
+    double ux_loc_n = 0.0;
+    double uy_loc_n = 0.0;
+    double T_loc_n = 0.0;
+
     //ideas to calculate the relaxation parameters from physical properties of collisions
     //const double sigma_el_ion=M_PI*(r_el+r_ion)*(r_el+r_ion); //Cross section for electron-ion interaction
     //const double mean_vel_el = std::sqrt(8*kb/(m_el*M_PI)); //Mean velocity of electrons without Temperature dependence
     //const double mean_vel_ion = std::sqrt(8*kb/(A_ion*m_p*M_PI)); //Mean velocity of ions without Temperature dependence
     //const double mass_el_ion = m_el * A_ion * m_p /(m_el + A_ion * m_p); //Reduced mass for electron-ion interaction
-    #pragma omp parallel for collapse(2) private(rho_loc_e, ux_loc_e, uy_loc_e, T_loc_e, rho_loc_i, ux_loc_i, uy_loc_i, T_loc_i)
+    //#pragma omp parallel for collapse(2) private(rho_loc_e, ux_loc_e, uy_loc_e, T_loc_e, rho_loc_i, ux_loc_i, uy_loc_i, T_loc_i, rho_loc_n, ux_loc_n, uy_loc_n, T_loc_n)
         for (size_t x=0; x<NX; ++x){
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y);
@@ -256,6 +351,11 @@ void LBmethod::UpdateMacro() {
                 ux_loc_i = 0.0;
                 uy_loc_i = 0.0;
                 T_loc_i = 0.0;
+
+                rho_loc_n = 0.0;
+                ux_loc_n = 0.0;
+                uy_loc_n = 0.0;
+                T_loc_n = 0.0;
 
 
                 for (size_t i = 0; i < Q; ++i) {
@@ -271,6 +371,12 @@ void LBmethod::UpdateMacro() {
                     ux_loc_i += fi_i * cx[i];
                     uy_loc_i += fi_i * cy[i];
                     T_loc_i += g_i[idx_3];
+
+                    const double fi_n=f_n[idx_3];
+                    rho_loc_n += fi_n;
+                    ux_loc_n += fi_n * cx[i];
+                    uy_loc_n += fi_n * cy[i];
+                    T_loc_n += g_n[idx_3];
                     
                 }
                 if (rho_loc_e<1e-10){//in order to avoid instabilities (can be removed if the code is stable)
@@ -283,26 +389,36 @@ void LBmethod::UpdateMacro() {
                     ux_i[idx] = 0.0;
                     uy_i[idx] = 0.0;
                     T_i[idx] = 0.0;
+                }else if (rho_loc_n<1e-10){
+                    rho_n[idx] = 0.0;
+                    ux_n[idx] = 0.0;
+                    uy_n[idx] = 0.0;
+                    T_n[idx] = 0.0;
                 }
                 else {
                     rho_e[idx] = rho_loc_e;
                     rho_i[idx] = rho_loc_i;
+                    rho_n[idx] = rho_loc_n;
 
                     // Assign velocities
                     ux_e[idx] = ux_loc_e / rho_loc_e;
                     uy_e[idx] = uy_loc_e / rho_loc_e;
                     ux_i[idx] = ux_loc_i / rho_loc_i;
                     uy_i[idx] = uy_loc_i / rho_loc_i;
+                    ux_n[idx] = ux_loc_n / rho_loc_n;
+                    uy_n[idx] = uy_loc_n / rho_loc_n;
 
                     //Add the force term to velocity
                     ux_e[idx] += 0.5 * q_e * Ex[idx] / m_e;
                     uy_e[idx] += 0.5 * q_e * Ey[idx] / m_e;
                     ux_i[idx] += 0.5 * q_i * Ex[idx] / m_i;
                     uy_i[idx] += 0.5 * q_i * Ey[idx] / m_i;
+                    //No force term for neutrals, they are not charged
 
                     // Assign Temperature
                     T_e[idx] = T_loc_e;
                     T_i[idx] = T_loc_i; 
+                    T_n[idx] = T_loc_n;
 
                     /////Other parameters not yet implemented
                     //Relaxation times
@@ -313,6 +429,11 @@ void LBmethod::UpdateMacro() {
                     ux_e_i[idx] = (rho_loc_e * ux_e[idx] + rho_loc_i * ux_i[idx]) / (rho_loc_e + rho_loc_i);
                     uy_e_i[idx] = (rho_loc_e * uy_e[idx] + rho_loc_i * uy_i[idx]) / (rho_loc_e + rho_loc_i);
 
+                    ux_e_n[idx] = (rho_loc_e * ux_e[idx] + rho_loc_n * ux_n[idx]) / (rho_loc_e + rho_loc_n);
+                    uy_e_n[idx] = (rho_loc_e * uy_e[idx] + rho_loc_n * uy_n[idx]) / (rho_loc_e + rho_loc_n);
+
+                    ux_i_n[idx] = (rho_loc_i * ux_i[idx] + rho_loc_n * ux_n[idx]) / (rho_loc_i + rho_loc_n);
+                    uy_i_n[idx] = (rho_loc_i * uy_i[idx] + rho_loc_n * uy_n[idx]) / (rho_loc_i + rho_loc_n);
                     //Interaction relaxation times
                     //tau_el_ion[idx] = 1.0/(sigma_el_ion * n_local_ion * mean_vel_el * std::sqrt(T_el[idx]));
                     //tau_ion_el[idx] = 1.0/(sigma_el_ion * n_local_el * mean_vel_ion * std::sqrt(T_ion[idx]));
@@ -881,12 +1002,13 @@ void LBmethod::SolvePoisson_Multigrid_Periodic() {
 
 
 //──────────────────────────────────────────────────────────────────────────────
-//  Collision step (BGK + Guo forcing) for both species:
+//  Collision step (BGK + Guo forcing) for both species (Only BGK for neutrals):
 //    f_e_post = f_e - (1/τ_e)(f_e - f_e^eq) + F_e
 //    f_i_post = f_i - (1/τ_i)(f_i - f_i^eq) + F_i
+//    f_n_post = f_n - (1/τ_n)(f_n - f_n^eq)
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Collisions() {
-    #pragma omp parallel for collapse(2)
+    //#pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y);
@@ -894,27 +1016,45 @@ void LBmethod::Collisions() {
             const double Ex_loc = Ex[idx];
             const double Ey_loc = Ey[idx];
 
+            const double Fx_e = q_e * Ex_loc / m_e;
+            const double Fy_e = q_e * Ey_loc / m_e;
+            const double Fx_i = q_i * Ex_loc / m_i;
+            const double Fy_i = q_i * Ey_loc / m_i;
+
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
                 
-                const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
-                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                    (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                    (ux_e[idx]*Ex_loc+uy_e[idx]*Ey_loc)
-                );
-                const double F_i = w[i] * q_i * rho_i[idx] / m_i / cs2 * (1.0-1.0/(2*tau_i)) * (
-                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                    (cx[i]*ux_i[idx]+cy[i]*uy_i[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                    (ux_i[idx]*Ex_loc+uy_i[idx]*Ey_loc)
-                );//maybe simplify a bit the writing
+                //const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
+                //    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
+                //    (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
+                //    (ux_e[idx]*Ex_loc+uy_e[idx]*Ey_loc)
+                //);
+                //const double F_i = w[i] * q_i * rho_i[idx] / m_i / cs2 * (1.0-1.0/(2*tau_i)) * (
+                //    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
+                //    (cx[i]*ux_i[idx]+cy[i]*uy_i[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
+                //    (ux_i[idx]*Ex_loc+uy_i[idx]*Ey_loc)
+                //);//maybe simplify a bit the writing
+                const double F_e = w[i] * rho_e[idx] * (
+                    (cx[i] - ux_e[idx]) * Fx_e + (cy[i] - uy_e[idx]) * Fy_e
+                    + (cx[i]*ux_e[idx] + cy[i]*uy_e[idx]) * (cx[i]*Fx_e + cy[i]*Fy_e) / cs2
+                ) / cs2 * (1.0 - 0.5 / tau_e);
+
+                const double F_i = w[i] * rho_i[idx] * (
+                    (cx[i] - ux_i[idx]) * Fx_i + (cy[i] - uy_i[idx]) * Fy_i
+                    + (cx[i]*ux_i[idx] + cy[i]*uy_i[idx]) * (cx[i]*Fx_i + cy[i]*Fy_i) / cs2
+                ) / cs2 * (1.0 - 0.5 / tau_i);
                
                 // Compute complete collisions terms
-                const double C_e = -(f_e[idx_3]-f_eq_e[idx_3]) / tau_e -(f_e[idx_3]-f_eq_e_i[idx_3]) / tau_e_i;
-                const double C_i = -(f_i[idx_3]-f_eq_i[idx_3]) / tau_i -(f_i[idx_3]-f_eq_i_e[idx_3]) / tau_e_i;
-
+                //const double C_e = -(f_e[idx_3]-f_eq_e[idx_3]) / tau_e -(f_e[idx_3]-f_eq_e_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
+                //const double C_i = -(f_i[idx_3]-f_eq_i[idx_3]) / tau_i -(f_i[idx_3]-f_eq_i_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
+                //const double C_n = -(f_n[idx_3]-f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
+                const double C_e = -(f_e[idx_3] - f_eq_e[idx_3]) / tau_e -(f_e[idx_3] - f_eq_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
+                const double C_i = -(f_i[idx_3] - f_eq_i[idx_3]) / tau_i -(f_i[idx_3] - f_eq_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
+                const double C_n = -(f_n[idx_3] - f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
                 // Update distribution functions with Guo forcing term
                 f_temp_e[idx_3] = f_e[idx_3] + C_e + F_e;
                 f_temp_i[idx_3] = f_i[idx_3] + C_i + F_i;
+                f_temp_n[idx_3] = f_n[idx_3] + C_n;
             }
         }
     }
@@ -929,7 +1069,7 @@ void LBmethod::Collisions() {
 //  Now no Source is added
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::ThermalCollisions() {
-    #pragma omp parallel for collapse(3)
+    //#pragma omp parallel for collapse(3)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
@@ -937,10 +1077,11 @@ void LBmethod::ThermalCollisions() {
                 // Compute complete collisions terms
                 const double C_e = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te;
                 const double C_i = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti;
-
-                // Update distribution functions with Guo forcing term
+                const double C_n = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn;
+                // Update distribution functions (with Guo forcing term)
                 g_temp_e[idx_3] = g_e[idx_3] + C_e;
                 g_temp_i[idx_3] = g_i[idx_3] + C_i;
+                g_temp_n[idx_3] = g_n[idx_3] + C_n;
             }
         }
     }
@@ -961,7 +1102,7 @@ void LBmethod::Streaming() {
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Streaming_Periodic() {
     // f(x,y,t+1) = f(x-cx, y-cy, t) con condizioni periodiche
-    #pragma omp parallel for collapse(3) schedule(static)
+    //#pragma omp parallel for collapse(3) schedule(static)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
@@ -969,13 +1110,15 @@ void LBmethod::Streaming_Periodic() {
                 size_t x_str = (x + NX + cx[i]) % NX;
                 size_t y_str = (y + NY + cy[i]) % NY;
 
-                f_temp_i[INDEX(x_str, y_str, i)] = f_i[INDEX(x, y, i)];
+                f_temp_i[INDEX(x_str, y_str, i)]  = f_i[INDEX(x, y, i)];
                 f_temp_e[INDEX(x_str, y_str, i)]  = f_e[INDEX(x, y, i)];
+                f_temp_n[INDEX(x_str, y_str, i)]  = f_n[INDEX(x, y, i)];
             }
         }
     }
     f_e.swap(f_temp_e);
     f_i.swap(f_temp_i);
+    f_n.swap(f_temp_n);
 }
 //──────────────────────────────────────────────────────────────────────────────
 //  Streaming + BOUNCE‐BACK walls at x=0, x=NX−1, y=0, y=NY−1.
@@ -986,9 +1129,9 @@ void LBmethod::Streaming_Periodic() {
 void LBmethod::Streaming_BounceBack() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
     // Parallelize the streaming step (over x and y)
-    #pragma omp parallel  ////Needed for???
+    //#pragma omp parallel  ////Needed for???
     {
-        #pragma omp for collapse(3) schedule(static)
+        //#pragma omp for collapse(3) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 for (size_t i = 0; i < Q; ++i) {
@@ -999,21 +1142,25 @@ void LBmethod::Streaming_BounceBack() {
                         //We are inside the lattice so simple streaming
                         f_temp_e[INDEX(x_str, y_str, i)] = f_e[INDEX(x, y, i)];
                         f_temp_i[INDEX(x_str, y_str, i)] = f_i[INDEX(x, y, i)];
+                        f_temp_n[INDEX(x_str, y_str, i)] = f_n[INDEX(x, y, i)];
                     }
                     else if(x_str >= 0 && x_str <static_cast<int>(NX)){
                         //We are outside so bounceback
                         f_temp_e[INDEX(x_str,y,opp[i])]=f_e[INDEX(x,y,i)];
                         f_temp_i[INDEX(x_str,y,opp[i])]=f_i[INDEX(x,y,i)];
+                        f_temp_n[INDEX(x_str,y,opp[i])]=f_n[INDEX(x,y,i)];
                     }
                     else if(y_str >= 0 && y_str <static_cast<int>(NY)){
                         //We are outside so bounceback
                         f_temp_e[INDEX(x,y_str,opp[i])]=f_e[INDEX(x,y,i)];
                         f_temp_i[INDEX(x,y_str,opp[i])]=f_i[INDEX(x,y,i)];
+                        f_temp_n[INDEX(x,y_str,opp[i])]=f_n[INDEX(x,y,i)];
                     }
                     else{
                         //We are outside so bounceback
                         f_temp_e[INDEX(x,y,opp[i])]=f_e[INDEX(x,y,i)];
                         f_temp_i[INDEX(x,y,opp[i])]=f_i[INDEX(x,y,i)];
+                        f_temp_n[INDEX(x,y,opp[i])]=f_n[INDEX(x,y,i)];
                     }
                 }
             }
@@ -1021,6 +1168,7 @@ void LBmethod::Streaming_BounceBack() {
     }
     f_e.swap(f_temp_e);
     f_i.swap(f_temp_i);
+    f_n.swap(f_temp_n);
     //f_temp is f at t=t+1 so now we use the new function f_temp in f
 }
 //──────────────────────────────────────────────────────────────────────────────
@@ -1034,8 +1182,28 @@ void LBmethod::Streaming_BounceBack() {
 //Periodic: when temperature at extreme are fixed and equal for opposite site
 //Dirichlet: when temperture at border are fixed
 //Cauchy: -kdT/dn=q when the bounce back lose energy 
+void LBmethod::ThermalStreaming_Periodic() {
+    
+    //#pragma omp parallel for collapse(3) schedule(static)
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
+            for (size_t i = 0; i < Q; ++i) {
+                // Streaming coordinates (periodic wrapping)
+                size_t x_str = (x + NX + cx[i]) % NX;
+                size_t y_str = (y + NY + cy[i]) % NY;
+
+                g_temp_i[INDEX(x_str, y_str, i)]  = g_i[INDEX(x, y, i)];
+                g_temp_e[INDEX(x_str, y_str, i)]  = g_e[INDEX(x, y, i)];
+                g_temp_n[INDEX(x_str, y_str, i)]  = g_n[INDEX(x, y, i)];
+            }
+        }
+    }
+    g_e.swap(g_temp_e);
+    g_i.swap(g_temp_i);
+    g_n.swap(g_temp_n);
+}
 void LBmethod::ThermalStreaming_BounceBack() {
-    #pragma omp for collapse(3) schedule(static)
+    //#pragma omp for collapse(3) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 for (size_t i = 0; i < Q; ++i) {
@@ -1046,17 +1214,20 @@ void LBmethod::ThermalStreaming_BounceBack() {
                         //We are inside the lattice so simple streaming
                         g_temp_e[INDEX(x_str, y_str, i)] = g_e[INDEX(x, y, i)];
                         g_temp_i[INDEX(x_str, y_str, i)] = g_i[INDEX(x, y, i)];
+                        g_temp_n[INDEX(x_str, y_str, i)] = g_n[INDEX(x, y, i)];
                     }
                     else{
                         //We are outside so bounceback
                         g_temp_e[INDEX(x,y,opp[i])]=g_e[INDEX(x,y,i)];
                         g_temp_i[INDEX(x,y,opp[i])]=g_i[INDEX(x,y,i)];
+                        g_temp_n[INDEX(x,y,opp[i])]=g_n[INDEX(x,y,i)];
                     }
                 }
             }
         }
     g_e.swap(g_temp_e);
     g_i.swap(g_temp_i);
+    g_n.swap(g_temp_n);
 }
 void LBmethod::Run_simulation() {
     
@@ -1111,7 +1282,6 @@ void LBmethod::Run_simulation() {
     }
 
 
-
     // --- Temperature‐video (2 panels side by side) ---
     {
         int frame_w = 2 * tile_w;
@@ -1128,7 +1298,9 @@ void LBmethod::Run_simulation() {
             return;
         }
     }
-
+    UpdateMacro();
+    SolvePoisson();
+    computeEquilibrium();
     //──────────────────────────────────────────────────────────────────────────────
     //  Main loop: for t = 0 … NSTEPS−1,
     //    [1] Update macros (ρ, u)
@@ -1143,6 +1315,8 @@ void LBmethod::Run_simulation() {
             auto min_rho_e = std::min_element(rho_e.begin(), rho_e.end());
             auto max_rho_i = std::max_element(rho_i.begin(), rho_i.end());
             auto min_rho_i = std::min_element(rho_i.begin(), rho_i.end());
+            auto max_rho_n = std::max_element(rho_n.begin(), rho_n.end());
+            auto min_rho_n = std::min_element(rho_n.begin(), rho_n.end());
             auto max_uxe = std::max_element(ux_e.begin(), ux_e.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto min_uxe = std::min_element(ux_e.begin(), ux_e.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto max_uye = std::max_element(uy_e.begin(), uy_e.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
@@ -1151,6 +1325,10 @@ void LBmethod::Run_simulation() {
             auto min_uxi = std::min_element(ux_i.begin(), ux_i.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto max_uyi = std::max_element(uy_i.begin(), uy_i.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto min_uyi = std::min_element(uy_i.begin(), uy_i.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+            auto max_uxn = std::max_element(ux_n.begin(), ux_n.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+            auto min_uxn = std::min_element(ux_n.begin(), ux_n.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+            auto max_uyn = std::max_element(uy_n.begin(), uy_n.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
+            auto min_uyn = std::min_element(uy_n.begin(), uy_n.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto max_Ex = std::max_element(Ex.begin(), Ex.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto min_Ex = std::min_element(Ex.begin(), Ex.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
             auto max_Ey = std::max_element(Ey.begin(), Ey.end(), [](int a, int b) { return std::abs(a) < std::abs(b); });
@@ -1161,17 +1339,23 @@ void LBmethod::Run_simulation() {
             auto min_Te = std::min_element(T_e.begin(), T_e.end());
             auto max_Ti = std::max_element(T_i.begin(), T_i.end());
             auto min_Ti = std::min_element(T_i.begin(), T_i.end());
+            auto max_Tn = std::max_element(T_n.begin(), T_n.end());
+            auto min_Tn = std::min_element(T_n.begin(), T_n.end());
             std::cout <<"Step:"<<t<<std::endl;
             std::cout <<"max rho_e= "<<*max_rho_e<<", min rho_e= "<<*min_rho_e<<std::endl;
             std::cout <<"max rho_i= "<<*max_rho_i<<", min rho_i= "<<*min_rho_i<<std::endl;
+            std::cout <<"max rho_n= "<<*max_rho_n<<", min rho_n= "<<*min_rho_n<<std::endl;
             std::cout <<"max ux_e= "<<*max_uxe<<", min ux_e= "<<*min_uxe<<std::endl;
-            std::cout <<"max ux_i= "<<*max_uxi<<", min ux_i= "<<*min_uxi<<std::endl;
             std::cout <<"max uy_e= "<<*max_uye<<", min uy_e= "<<*min_uye<<std::endl;
+            std::cout <<"max ux_i= "<<*max_uxi<<", min ux_i= "<<*min_uxi<<std::endl;
             std::cout <<"max uy_i= "<<*max_uyi<<", min uy_i= "<<*min_uyi<<std::endl;
+            std::cout <<"max ux_n= "<<*max_uxn<<", min ux_n= "<<*min_uxn<<std::endl;
+            std::cout <<"max uy_n= "<<*max_uyn<<", min uy_n= "<<*min_uyn<<std::endl;
             std::cout <<"max Ex= "<<*max_Ex<<", min Ex= "<<*min_Ex<<std::endl;
             std::cout <<"max Ey= "<<*max_Ey<<", min Ey= "<<*min_Ey<<std::endl;
             std::cout <<"max T_e= "<<*max_Te<<", min T_e= "<<*min_Te<<std::endl;
             std::cout <<"max T_i= "<<*max_Ti<<", min T_i= "<<*min_Ti<<std::endl;
+            std::cout <<"max T_n= "<<*max_Tn<<", min T_n= "<<*min_Tn<<std::endl;
             std::cout <<"max rho_q (latt)= "<<*max_rho<<", rho_q (latt)= "<<*min_rho<<std::endl;
             std::cout <<std::endl;
         }
@@ -1181,7 +1365,7 @@ void LBmethod::Run_simulation() {
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
         ThermalCollisions();
         Streaming(); // f(x,y,t+1)=f(x-cx,y-cy,t)
-        ThermalStreaming_BounceBack();
+        ThermalStreaming_Periodic();
         SolvePoisson();
 
         VisualizationDensity();
