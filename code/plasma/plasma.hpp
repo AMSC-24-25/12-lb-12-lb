@@ -60,7 +60,9 @@ public:
              const double    Ey_SI,
              const double    T_e_SI_init,
              const double    T_i_SI_init,
+             const double    T_n_SI_init,
              const double    n_0_SI_init,
+             const double    n_n_SI_init,
              const PoissonType poisson_type,
              const BCType      bc_type,
              const double    omega_sor);
@@ -74,8 +76,9 @@ public:
     // File streams per CSV
     std::ofstream file_ux_e, file_uy_e, file_ue_mag;
     std::ofstream file_ux_i, file_uy_i, file_ui_mag;
-    std::ofstream file_T_e, file_T_i;
-    std::ofstream file_rho_e, file_rho_i, file_rho_q;
+    std::ofstream file_ux_n, file_uy_n, file_un_mag;
+    std::ofstream file_T_e, file_T_i, file_T_n;
+    std::ofstream file_rho_e, file_rho_i, file_rho_n, file_rho_q;
     std::ofstream file_Ex, file_Ey, file_E_mag;
     
     // Funzioni per gestione CSV e plotting
@@ -97,7 +100,9 @@ private:
     const double    Ey_SI;
     const double    T_e_SI_init;
     const double    T_i_SI_init;
+    const double    T_n_SI_init;
     const double    n_0_SI_init;
+    const double    n_n_SI_init;
     const PoissonType  poisson_type; // which Poisson solver to run
     const BCType       bc_type;      // which streaming/BC we use
     const double       omega_sor;    // over‐relaxation factor for SOR
@@ -112,14 +117,16 @@ private:
     static constexpr double m_e_SI      = 9.10938356e-31; // [kg]
     static constexpr double u_SI        = 1.66053906660e-27; // [kg]
     static constexpr double m_p_SI      = 1.67262192595e-27; // [kg]
-    static constexpr double m_n_SI      = 1.67492749804e-27; // [kg]
+    static constexpr double m_ne_SI      = 1.67492749804e-27; // [kg]
     static constexpr double r_el_SI     = 2.8179403267e-15; // [m] (classical electron radius)
 
-    const double m_i_SI = A_ion * u_SI; //[kg]
+    const double m_i_SI = A_ion * u_SI; //[kg] //neglet the electron mass
+    const double m_n_SI = A_ion * u_SI; //[kg]
     //──────────────────────────────────────────────────────────────────────────────
     // Physical conversion quantities from SI to LU:
     //──────────────────────────────────────────────────────────────────────────────
     const double n0_SI = n_0_SI_init;
+    const double nn_SI = n_n_SI_init;
 
     const double M0_SI = m_e_SI; // physical mass [kg]
     const double T0_SI = T_e_SI_init; // physical temperature [K]
@@ -144,18 +151,24 @@ private:
     //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
     //const double tau_e=nu_e/cs2+0.5;
     // Relaxation times (to be set in constructor)
-    const double tau_e = 0.55, tau_i = 0.7, tau_e_i = 1.0;
-    const double tau_Te = 0.6, tau_Ti = 1.0, tau_Te_Ti = 2.0;
+    const double tau_e = 0.55, tau_i = 0.7, tau_e_i = 1.0,
+                 tau_n = 0.7, tau_e_n = 1, tau_i_n= 1;
+    const double tau_Te = 0.6, tau_Ti = 1.0, tau_Te_Ti = 2.0,
+                 tau_Tn = 1.0, tau_Tn_Te = 2.0, tau_Tn_Ti = 2.0;
 
     // Converted E‐field in lattice units:
-    const double Ex_ext = Ex_SI / E0_SI, Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
+    const double Ex_ext = Ex_SI / E0_SI, 
+                 Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
 
     // Converted temperatures in lattice units:
-    const double T_e_init = T_e_SI_init / T0_SI, T_i_init = T_i_SI_init / T0_SI; // initial temperatures in lattice units
+    const double T_e_init = T_e_SI_init / T0_SI, 
+                 T_i_init = T_i_SI_init / T0_SI, 
+                 T_n_init = T_n_SI_init / T0_SI; // initial temperatures in lattice units
 
     // mass in lattice units:
     const double m_e = m_e_SI / M0_SI; // electron mass in lattice units
     const double m_i = m_i_SI / M0_SI; // ion mass in electron masses (for convenience)
+    const double m_n = m_n_SI / M0_SI; // neutral mass in electron masses (for convenience)
 
     // Converted charge in lattice units:
     const double q_e = - e_charge_SI / Q0_SI; // electron charge in lattice units
@@ -164,6 +177,7 @@ private:
     // Initial density in lattice unit
     const double rho_e_init = m_e * n_0_SI_init / n0_SI; // electron density in lattice units
     const double rho_i_init = m_i * n_0_SI_init / n0_SI / Z_ion; // ion density in lattice units. The idea behind /Z_ion is the quasi neutrality of the plamsa at the start
+    const double rho_n_init = m_n * n_n_SI_init / n0_SI; 
 
     //──────────────────────────────────────────────────────────────────────────────
     // 4) D2Q9 Setup
@@ -180,26 +194,35 @@ private:
     //──────────────────────────────────────────────────────────────────────────────
     // Distribution functions: f_e[i + Q*(x + NX*y)], f_i[i + Q*(x + NX*y)]
     std::vector<double>   f_e,    f_temp_e,
-                          f_i,    f_temp_i;
+                          f_i,    f_temp_i,
+                          f_n,    f_temp_n;
     // Equilibrium distribution functions
-    std::vector<double>   f_eq_e,    f_eq_i,   
-                        f_eq_e_i,    f_eq_i_e;
+    std::vector<double>   f_eq_e,    f_eq_i,   f_eq_n,  
+                          f_eq_e_i,  f_eq_i_e,
+                          f_eq_e_n,  f_eq_n_e,
+                          f_eq_i_n,  f_eq_n_i;    
                          
     // Thermal distribution function
     std::vector<double>   g_e,    g_temp_e,
-                         g_i,    g_temp_i;
+                          g_i,    g_temp_i,
+                          g_n,    g_temp_n;
     // Equilibrium distribution functions
-    std::vector<double>   g_eq_e,    g_eq_e_i,
-                         g_eq_i,    g_eq_i_e;
+    std::vector<double>   g_eq_e,    g_eq_i,   g_eq_n, 
+                          g_eq_e_i,  g_eq_i_e,
+                          g_eq_e_n,  g_eq_n_e,
+                          g_eq_i_n,  g_eq_n_i;
 
     // Macroscopic moments (per cell)
-    std::vector<double>   rho_e, rho_i;      // densities
-    std::vector<double>   ux_e,  uy_e,       // velocities
-                         ux_i,  uy_i,
-                         ux_e_i, uy_e_i;
+    std::vector<double>   rho_e, rho_i, rho_n;      // densities
+    std::vector<double>   ux_e,  uy_e,             // velocities
+                          ux_i,  uy_i,
+                          ux_n,  uy_n,
+                          ux_e_i, uy_e_i,
+                          ux_e_n, uy_e_n,
+                          ux_i_n, uy_i_n;
     
     // Temperature vectors
-    std::vector<double>  T_e,  T_i;
+    std::vector<double>  T_e,  T_i, T_n;
 
     // Electric potential & fields (per cell), in lattice units
     std::vector<double>   phi,   phi_new;
@@ -269,7 +292,7 @@ private:
     void Streaming();
     void Streaming_Periodic();
     void Streaming_BounceBack();
-
+    void ThermalStreaming_Periodic();
     void ThermalStreaming_BounceBack();
 
     // (g) Poisson solvers:
