@@ -34,7 +34,7 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
                    const double    _T_e_SI_init,
                    const double    _T_i_SI_init,
                    const double    _T_n_SI_init,
-                   const double    _n_0_SI_init,
+                   const double    _n_e_SI_init,
                    const double    _n_n_SI_init,
                    const PoissonType _poisson_type,
                    const BCType      _bc_type,
@@ -51,7 +51,7 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
       T_e_SI_init(_T_e_SI_init),
       T_i_SI_init(_T_i_SI_init),
       T_n_SI_init(_T_n_SI_init),
-      n_0_SI_init(_n_0_SI_init),
+      n_e_SI_init(_n_e_SI_init),
       n_n_SI_init(_n_n_SI_init),
       poisson_type(_poisson_type),
       bc_type     (_bc_type),
@@ -123,7 +123,7 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
     // In lattice units, store ρ_q_latt = (ρ_i - ρ_e) * 1.0  (just #/cell difference)
     rho_q.assign(NX * NY, 0.0); //Should be rho_q_latt[idx] = (n_i[idx] - n_e[idx]) * q_0;
 
-    // 9) Initialize fields:  set f = f_eq(rho=1,u=0), zero φ, E=Ex_latt_init
+    // 9) Initialize fields:  set f = w * m
     Initialize();
     // 10) Print initial values to check
     std::cout
@@ -156,48 +156,20 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Initialize() {
     // Initialize f=f_eq=weight at (ρ=1, u=0)
-    const int x_e_min = 400, x_e_max = 401;
-    const int x_i_min = 500, x_i_max = 501;
-    const int N_e = x_e_max - x_e_min + 1;
-    const int N_i = x_i_max - x_i_min + 1;
-
-    const double rho_i_adjusted = - (q_e * rho_e_init * N_e) / (q_i * N_i);
-
-    //#pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (size_t x = 0; x < NX; ++x) {
         for(size_t y = 0; y < NY; ++y){
-            const size_t idx = INDEX(x,y);
-            rho_n[idx] = rho_n_init; // Set initial neutral density
-            T_n[idx] = T_n_init; // Set initial neutral temperature
-            
-            double rho_e_local = (x >= x_e_min && x <= x_e_max) ? rho_e_init : 0.0;
-            double rho_i_local = (x >= x_i_min && x <= x_i_max) ? rho_i_adjusted : 0.0;
-
-            rho_e[idx] = rho_e_local;
-            rho_i[idx] = rho_i_local;
-            T_e[idx] = T_e_init;
-            T_i[idx] = T_i_init;
-
             for (size_t i=0;i<Q;++i){
                 const size_t idx_3 = INDEX(x, y, i);
 
-                double f_e_local = (x >= x_e_min && x <= x_e_max) ? w[i] * m_e : 0.0;
-                double f_i_local = (x >= x_i_min && x <= x_i_max) ? w[i] * m_i : 0.0;
-                f_e[idx_3] = f_eq_e[idx_3] = f_e_local; // Equilibrium function for electrons
-                g_e[idx_3] = g_eq_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
-                
-                f_i[idx_3] = f_eq_i[idx_3] = f_i_local; // Equilibrium function for ions
-                g_i[idx_3] = g_eq_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
-                
-                f_n[idx_3] = f_eq_n[idx_3] = w[i] * m_n; // Equilibrium function for neutrals
-                g_n[idx_3] = g_eq_n[idx_3] = w[i] * T_n_init; // Thermal function for neutrals
-                
-                f_eq_i_e[idx_3] = w[i] * m_i; // Equilibrium function for ion-electron interaction
-                f_eq_e_i[idx_3] = w[i] * m_e; // Equilibrium function for electron-ion interaction
-                f_eq_n_e[idx_3] = w[i] * m_n; // Equilibrium function for neutral-electron interaction
-                f_eq_e_n[idx_3] = w[i] * m_e; // Equilibrium function for electron-neutral interaction
-                f_eq_n_i[idx_3] = w[i] * m_n; // Equilibrium function for neutral-ion interaction
-                f_eq_i_n[idx_3] = w[i] * m_i; // Equilibrium function for ion-neutral interaction
+                if (x<(3*NX/4) && x>(NX/4) && y<(3*NY/4) && y>(1*NY/4)){
+                    f_e[idx_3] = w[i] * rho_e_init; // Equilibrium function for electrons
+                    g_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
+                    f_i[idx_3] = w[i] * rho_i_init; // Equilibrium function for ions
+                    g_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
+                }
+                f_n[idx_3] = w[i] * rho_n_init;
+                g_n[idx_3] = w[i] * T_n_init;
             }
         }
     }
@@ -207,19 +179,19 @@ void LBmethod::Initialize() {
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe can be used as a function
     // Compute the equilibrium distribution function f_eq
-    //#pragma omp parallel for collapse(2) schedule(static)
+    #pragma omp parallel for collapse(2) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y); // Get 1D index for 2D point (x, y)
                 const double u2_e = ux_e[idx] * ux_e[idx] + uy_e[idx] * uy_e[idx]; // Square of the speed magnitude
-                const double u2_i = ux_i[idx] * ux_i[idx] + uy_i[idx] * uy_i[idx];
+                const double u2_i = ux_i[idx] * ux_i[idx] + uy_i[idx] * uy_i[idx]; 
                 const double u2_n = ux_n[idx] * ux_n[idx] + uy_n[idx] * uy_n[idx]; 
                 const double u2_e_i = ux_e_i[idx] * ux_e_i[idx] + uy_e_i[idx] * uy_e_i[idx]; // Square of the speed magnitude for electron-ion interaction
-                const double u2_e_n = ux_e_n[idx] * ux_e_n[idx] + uy_e_n[idx] * uy_e_n[idx]; // Square of the speed magnitude for electron-neutral interaction
-                const double u2_i_n = ux_i_n[idx] * ux_i_n[idx] + uy_i_n[idx] * uy_i_n[idx]; // Square of the speed magnitude for ion-neutral interaction
+                const double u2_e_n = ux_e_n[idx] * ux_e_n[idx] + uy_e_n[idx] * uy_e_n[idx];
+                const double u2_i_n = ux_i_n[idx] * ux_i_n[idx] + uy_i_n[idx] * uy_i_n[idx];
                 const double den_e = rho_e[idx]; // Electron density
                 const double den_i = rho_i[idx]; // Ion density
-                const double den_n = rho_n[idx]; // Neutral density
+                const double den_n = rho_n[idx]; // Neutrals density
                 
                 for (size_t i = 0; i < Q; ++i) {
                     const size_t idx_3=INDEX(x, y, i);
@@ -227,8 +199,9 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                     const double cu_i = cx[i]*ux_i[idx] +cy[i]*uy_i[idx];
                     const double cu_n = cx[i]*ux_n[idx] +cy[i]*uy_n[idx];
                     const double cu_e_i = cx[i]*ux_e_i[idx] +cy[i]*uy_e_i[idx]; // Dot product (c_i · u) for electron-ion interaction
-                    const double cu_e_n = cx[i]*ux_e_n[idx] +cy[i]*uy_e_n[idx]; // Dot product (c_i · u) for electron-neutral interaction
-                    const double cu_i_n = cx[i]*ux_i_n[idx] +cy[i]*uy_i_n[idx]; // Dot product (c_i · u) for ion-neutral interaction
+                    const double cu_e_n = cx[i]*ux_e_n[idx] +cy[i]*uy_e_n[idx];
+                    const double cu_i_n = cx[i]*ux_i_n[idx] +cy[i]*uy_i_n[idx];
+
                     // Compute f_eq from discretization of Maxwell Boltzmann distribution function
                     f_eq_e[idx_3]= w[i]*den_e*(
                         1.0 +
@@ -333,12 +306,7 @@ void LBmethod::UpdateMacro() {
     double uy_loc_n = 0.0;
     double T_loc_n = 0.0;
 
-    //ideas to calculate the relaxation parameters from physical properties of collisions
-    //const double sigma_el_ion=M_PI*(r_el+r_ion)*(r_el+r_ion); //Cross section for electron-ion interaction
-    //const double mean_vel_el = std::sqrt(8*kb/(m_el*M_PI)); //Mean velocity of electrons without Temperature dependence
-    //const double mean_vel_ion = std::sqrt(8*kb/(A_ion*m_p*M_PI)); //Mean velocity of ions without Temperature dependence
-    //const double mass_el_ion = m_el * A_ion * m_p /(m_el + A_ion * m_p); //Reduced mass for electron-ion interaction
-    //#pragma omp parallel for collapse(2) private(rho_loc_e, ux_loc_e, uy_loc_e, T_loc_e, rho_loc_i, ux_loc_i, uy_loc_i, T_loc_i, rho_loc_n, ux_loc_n, uy_loc_n, T_loc_n)
+    #pragma omp parallel for collapse(2) private(rho_loc_e, ux_loc_e, uy_loc_e, T_loc_e, rho_loc_i, ux_loc_i, uy_loc_i, T_loc_i, rho_loc_n, ux_loc_n, uy_loc_n, T_loc_n)
         for (size_t x=0; x<NX; ++x){
             for (size_t y = 0; y < NY; ++y) {
                 const size_t idx = INDEX(x, y);
@@ -356,7 +324,6 @@ void LBmethod::UpdateMacro() {
                 ux_loc_n = 0.0;
                 uy_loc_n = 0.0;
                 T_loc_n = 0.0;
-
 
                 for (size_t i = 0; i < Q; ++i) {
                     const size_t idx_3 = INDEX(x, y, i);
@@ -384,62 +351,68 @@ void LBmethod::UpdateMacro() {
                     ux_e[idx] = 0.0;
                     uy_e[idx] = 0.0;
                     T_e[idx] = 0.0;
-                }else if (rho_loc_i<1e-10){
+                } else{
+                    rho_e[idx] = rho_loc_e;
+                    ux_e[idx] = ux_loc_e / rho_loc_e;
+                    uy_e[idx] = uy_loc_e / rho_loc_e;
+                    ux_e[idx] += 0.5 * q_e * Ex[idx] / m_e;
+                    uy_e[idx] += 0.5 * q_e * Ey[idx] / m_e;
+                    T_e[idx] = T_loc_e;
+                } 
+                if (rho_loc_i<1e-10){
                     rho_i[idx] = 0.0;
                     ux_i[idx] = 0.0;
                     uy_i[idx] = 0.0;
                     T_i[idx] = 0.0;
-                }else if (rho_loc_n<1e-10){
+                }else {
+                    rho_i[idx] = rho_loc_i;
+                    ux_i[idx] = ux_loc_i / rho_loc_i;
+                    uy_i[idx] = uy_loc_i / rho_loc_i;
+                    ux_i[idx] += 0.5 * q_i * Ex[idx] / m_i;
+                    uy_i[idx] += 0.5 * q_i * Ey[idx] / m_i;
+                    T_i[idx] = T_loc_i;
+                }
+                if (rho_loc_n<1e-10){
                     rho_n[idx] = 0.0;
                     ux_n[idx] = 0.0;
                     uy_n[idx] = 0.0;
                     T_n[idx] = 0.0;
                 }
                 else {
-                    rho_e[idx] = rho_loc_e;
-                    rho_i[idx] = rho_loc_i;
                     rho_n[idx] = rho_loc_n;
-
-                    // Assign velocities
-                    ux_e[idx] = ux_loc_e / rho_loc_e;
-                    uy_e[idx] = uy_loc_e / rho_loc_e;
-                    ux_i[idx] = ux_loc_i / rho_loc_i;
-                    uy_i[idx] = uy_loc_i / rho_loc_i;
                     ux_n[idx] = ux_loc_n / rho_loc_n;
                     uy_n[idx] = uy_loc_n / rho_loc_n;
-
-                    //Add the force term to velocity
-                    ux_e[idx] += 0.5 * q_e * Ex[idx] / m_e;
-                    uy_e[idx] += 0.5 * q_e * Ey[idx] / m_e;
-                    ux_i[idx] += 0.5 * q_i * Ex[idx] / m_i;
-                    uy_i[idx] += 0.5 * q_i * Ey[idx] / m_i;
                     //No force term for neutrals, they are not charged
-
-                    // Assign Temperature
-                    T_e[idx] = T_loc_e;
-                    T_i[idx] = T_loc_i; 
                     T_n[idx] = T_loc_n;
-
-                    /////Other parameters not yet implemented
-                    //Relaxation times
-                    //tau_el[idx] = 1.0/(M_PI*(2*r_el)*(2*r_el) * n_local_el * mean_vel_el * std::sqrt(T_el[idx])); //Relaxation time for electron
-                    //tau_ion[idx] = 1.0/(M_PI*(2*r_ion)*(2*r_ion) * n_local_ion * mean_vel_ion * std::sqrt(T_ion[idx])); //Relaxation time for ion
-    
-                    //Interaction velocities
+                }
+                if (rho_loc_e<1e-10 && rho_loc_i<1e-10){
+                    ux_e_i[idx] = 0.0;
+                    uy_e_i[idx] = 0.0;
+                }
+                else {
                     ux_e_i[idx] = (rho_loc_e * ux_e[idx] + rho_loc_i * ux_i[idx]) / (rho_loc_e + rho_loc_i);
                     uy_e_i[idx] = (rho_loc_e * uy_e[idx] + rho_loc_i * uy_i[idx]) / (rho_loc_e + rho_loc_i);
-
+                }
+                if (rho_loc_e<1e-10 && rho_loc_n<1e-10){
+                    ux_e_n[idx] = 0.0;
+                    uy_e_n[idx] = 0.0;
+                }
+                else {
                     ux_e_n[idx] = (rho_loc_e * ux_e[idx] + rho_loc_n * ux_n[idx]) / (rho_loc_e + rho_loc_n);
                     uy_e_n[idx] = (rho_loc_e * uy_e[idx] + rho_loc_n * uy_n[idx]) / (rho_loc_e + rho_loc_n);
-
+                }
+                if (rho_loc_i<1e-10 && rho_loc_n<1e-10){
+                    ux_i_n[idx] = 0.0;
+                    uy_i_n[idx] = 0.0;
+                }
+                else {
                     ux_i_n[idx] = (rho_loc_i * ux_i[idx] + rho_loc_n * ux_n[idx]) / (rho_loc_i + rho_loc_n);
                     uy_i_n[idx] = (rho_loc_i * uy_i[idx] + rho_loc_n * uy_n[idx]) / (rho_loc_i + rho_loc_n);
-                    //Interaction relaxation times
-                    //tau_el_ion[idx] = 1.0/(sigma_el_ion * n_local_ion * mean_vel_el * std::sqrt(T_el[idx]));
-                    //tau_ion_el[idx] = 1.0/(sigma_el_ion * n_local_el * mean_vel_ion * std::sqrt(T_ion[idx]));
                 }
+                
                 // Lattice‐unit charge density (#/cell difference):
                 rho_q[idx] = (q_i * rho_i[idx] / m_i + q_e * rho_e[idx] / m_e);
+                if(rho_q[idx]<1e-15)    rho_q[idx]=0.0; //correct for machine error
             }
         }
 }
@@ -455,7 +428,7 @@ void LBmethod::SolvePoisson() {
             if(bc_type == BCType::PERIODIC) SolvePoisson_SOR_Periodic();
             else SolvePoisson_SOR();
         }
-    else if (poisson_type == PoissonType::FFT && bc_type == BCType::PERIODIC)      SolvePoisson_fft();
+    else if (poisson_type == PoissonType::FFT && bc_type == BCType::PERIODIC) SolvePoisson_fft();
     else if (poisson_type == PoissonType::NPS && bc_type == BCType::PERIODIC) SolvePoisson_9point_Periodic();
     else if (poisson_type == PoissonType::MG  && bc_type == BCType::PERIODIC) SolvePoisson_Multigrid_Periodic();
     // else if (poisson_type == PoissonType::NONE)    // No Poisson solver, use initial Ex, Ey
@@ -470,19 +443,9 @@ void LBmethod::SolvePoisson() {
 //    E_x = −(φ[i+1,j] − φ[i−1,j]) / (2 * dx_SI), etc.
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::SolvePoisson_GS() {
-    std::vector<double> RHS(NX*NY, 0.0);
-
-    // Build RHS_latt = −(ρ_q_phys / ε₀) * dx_SI
-    for(size_t idx=0; idx<NX*NY; ++idx) {
-        RHS[idx] = - rho_q[idx];
-    }
-    // Initialize φ = 0 everywhere
-    for(size_t idx=0; idx<NX*NY; ++idx) {
-        phi[idx] = 0.0;
-    }
 
     // GS iterations
-    const size_t maxIter = 2000;
+    const size_t maxIter = 5000;
     const double tol = 1e-8;
     for(size_t iter=0; iter<maxIter; ++iter) {
         double maxErr = 0.0;
@@ -494,7 +457,7 @@ void LBmethod::SolvePoisson_GS() {
                              + phi[INDEX(i-1,j)]
                              + phi[INDEX(i,j+1)]
                              + phi[INDEX(i,j-1)];
-                phi[idx] = 0.25 * (nbSum - RHS[idx]);
+                phi[idx] = 0.25 * (nbSum + rho_q[idx]);
                 double err = std::abs(phi[idx] - old);
                 if (err > maxErr) maxErr = err;
             }
@@ -586,7 +549,7 @@ void LBmethod::SolvePoisson_GS_Periodic() {
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::SolvePoisson_SOR() {
 
-    const size_t maxIter = 2000;
+    const size_t maxIter = 5000;
     const double tol = 1e-8;
     for(size_t iter=0; iter<maxIter; ++iter) {
         double maxErr = 0.0;
@@ -646,9 +609,9 @@ void LBmethod::SolvePoisson_SOR_Periodic() {
                 size_t idx = INDEX(i,j);
                 double sumNb = phi[INDEX(ip1,j)] + phi[INDEX(im1,j)]
                              + phi[INDEX(i,jp1)] + phi[INDEX(i,jm1)];
-                double gsPhi = 0.25 * (sumNb - rho_q[idx]);
+                double gsPhi = 0.25 * (sumNb + rho_q[idx]);
                 double newPhi = (1.0 - omega)*phi[idx] + omega*gsPhi;
-                double err = std::abs(newPhi + phi[idx]);
+                double err = std::abs(newPhi - phi[idx]);
                 if (err > maxErr) maxErr = err;
                 phi[idx] = newPhi;
             }
@@ -820,16 +783,8 @@ void restrict_full_weighting_periodic(const std::vector<double>& residuoFine,
     residuoCoarse.assign(nxc * nyc, 0.0);
     for (int J = 0; J < nyc; ++J) {
         int j = 2*J;
-        int jm1 = (j + ny - 1) % ny;
-        int jp1 = (j + 1) % ny;
-        int jp2 = (j + 2) % ny;
-        int jm2 = (j + ny - 2) % ny;
         for (int I = 0; I < nxc; ++I) {
             int i = 2*I;
-            int im1 = (i + nx - 1) % nx;
-            int ip1 = (i + 1) % nx;
-            int ip2 = (i + 2) % nx;
-            int im2 = (i + nx - 2) % nx;
             // Full-weighting: media pesata su 9x9 punti:
             // residuoCoarse[I,J] = (1/16)*(4*residuoFine[i,j] + 2*(residuoFine[i+1,j]+residuoFine[i-1,j]+residuoFine[i,j+1]+residuoFine[i,j-1]) + residuoFine[i+1,j+1]+... );
             double sum = 0.0;
@@ -1002,13 +957,12 @@ void LBmethod::SolvePoisson_Multigrid_Periodic() {
 
 
 //──────────────────────────────────────────────────────────────────────────────
-//  Collision step (BGK + Guo forcing) for both species (Only BGK for neutrals):
+//  Collision step (BGK + Guo forcing) for both species:
 //    f_e_post = f_e - (1/τ_e)(f_e - f_e^eq) + F_e
 //    f_i_post = f_i - (1/τ_i)(f_i - f_i^eq) + F_i
-//    f_n_post = f_n - (1/τ_n)(f_n - f_n^eq)
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Collisions() {
-    //#pragma omp parallel for collapse(2)
+    #pragma omp parallel for collapse(2)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             const size_t idx = INDEX(x, y);
@@ -1016,41 +970,25 @@ void LBmethod::Collisions() {
             const double Ex_loc = Ex[idx];
             const double Ey_loc = Ey[idx];
 
-            const double Fx_e = q_e * Ex_loc / m_e;
-            const double Fy_e = q_e * Ey_loc / m_e;
-            const double Fx_i = q_i * Ex_loc / m_i;
-            const double Fy_i = q_i * Ey_loc / m_i;
-
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
                 
-                //const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
-                //    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                //    (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                //    (ux_e[idx]*Ex_loc+uy_e[idx]*Ey_loc)
-                //);
-                //const double F_i = w[i] * q_i * rho_i[idx] / m_i / cs2 * (1.0-1.0/(2*tau_i)) * (
-                //    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                //    (cx[i]*ux_i[idx]+cy[i]*uy_i[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                //    (ux_i[idx]*Ex_loc+uy_i[idx]*Ey_loc)
-                //);//maybe simplify a bit the writing
-                const double F_e = w[i] * rho_e[idx] * (
-                    (cx[i] - ux_e[idx]) * Fx_e + (cy[i] - uy_e[idx]) * Fy_e
-                    + (cx[i]*ux_e[idx] + cy[i]*uy_e[idx]) * (cx[i]*Fx_e + cy[i]*Fy_e) / cs2
-                ) / cs2 * (1.0 - 0.5 / tau_e);
-
-                const double F_i = w[i] * rho_i[idx] * (
-                    (cx[i] - ux_i[idx]) * Fx_i + (cy[i] - uy_i[idx]) * Fy_i
-                    + (cx[i]*ux_i[idx] + cy[i]*uy_i[idx]) * (cx[i]*Fx_i + cy[i]*Fy_i) / cs2
-                ) / cs2 * (1.0 - 0.5 / tau_i);
+                const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
+                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
+                    (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
+                    (ux_e[idx]*Ex_loc+uy_e[idx]*Ey_loc)
+                );
+                const double F_i = w[i] * q_i * rho_i[idx] / m_i / cs2 * (1.0-1.0/(2*tau_i)) * (
+                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
+                    (cx[i]*ux_i[idx]+cy[i]*uy_i[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
+                    (ux_i[idx]*Ex_loc+uy_i[idx]*Ey_loc)
+                );//maybe simplify a bit the writing
                
                 // Compute complete collisions terms
-                //const double C_e = -(f_e[idx_3]-f_eq_e[idx_3]) / tau_e -(f_e[idx_3]-f_eq_e_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
-                //const double C_i = -(f_i[idx_3]-f_eq_i[idx_3]) / tau_i -(f_i[idx_3]-f_eq_i_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
-                //const double C_n = -(f_n[idx_3]-f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
-                const double C_e = -(f_e[idx_3] - f_eq_e[idx_3]) / tau_e -(f_e[idx_3] - f_eq_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
-                const double C_i = -(f_i[idx_3] - f_eq_i[idx_3]) / tau_i -(f_i[idx_3] - f_eq_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
-                const double C_n = -(f_n[idx_3] - f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
+                const double C_e = -(f_e[idx_3]-f_eq_e[idx_3]) / tau_e -(f_e[idx_3]-f_eq_e_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
+                const double C_i = -(f_i[idx_3]-f_eq_i[idx_3]) / tau_i -(f_i[idx_3]-f_eq_i_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
+                const double C_n = -(f_n[idx_3]-f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
+
                 // Update distribution functions with Guo forcing term
                 f_temp_e[idx_3] = f_e[idx_3] + C_e + F_e;
                 f_temp_i[idx_3] = f_i[idx_3] + C_i + F_i;
@@ -1061,6 +999,7 @@ void LBmethod::Collisions() {
     // Swap temporary arrays with main arrays
     f_e.swap(f_temp_e);
     f_i.swap(f_temp_i);
+    f_n.swap(f_temp_n);
 }
 //──────────────────────────────────────────────────────────────────────────────
 //  Thermal Collision step for both species:
@@ -1069,7 +1008,7 @@ void LBmethod::Collisions() {
 //  Now no Source is added
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::ThermalCollisions() {
-    //#pragma omp parallel for collapse(3)
+    #pragma omp parallel for collapse(3)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
@@ -1078,7 +1017,8 @@ void LBmethod::ThermalCollisions() {
                 const double C_e = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te;
                 const double C_i = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti;
                 const double C_n = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn;
-                // Update distribution functions (with Guo forcing term)
+
+                // Update distribution functions with Guo forcing term
                 g_temp_e[idx_3] = g_e[idx_3] + C_e;
                 g_temp_i[idx_3] = g_i[idx_3] + C_i;
                 g_temp_n[idx_3] = g_n[idx_3] + C_n;
@@ -1088,13 +1028,14 @@ void LBmethod::ThermalCollisions() {
     // Swap temporary arrays with main arrays
     g_e.swap(g_temp_e);
     g_i.swap(g_temp_i);
+    g_n.swap(g_temp_n);
 }
 //──────────────────────────────────────────────────────────────────────────────
 //  Streaming dispatcher:
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Streaming() {
-    if (bc_type == BCType::PERIODIC)       Streaming_Periodic();
-    else /* BCType::BOUNCE_BACK */         Streaming_BounceBack();
+    if (bc_type == BCType::PERIODIC){Streaming_Periodic();    ThermalStreaming_Periodic();}
+    else /* BCType::BOUNCE_BACK */  {Streaming_BounceBack();  ThermalStreaming_BounceBack();}
 }
 //──────────────────────────────────────────────────────────────────────────────
 //  Streaming + PERIODIC boundaries:
@@ -1102,7 +1043,7 @@ void LBmethod::Streaming() {
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Streaming_Periodic() {
     // f(x,y,t+1) = f(x-cx, y-cy, t) con condizioni periodiche
-    //#pragma omp parallel for collapse(3) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
@@ -1110,9 +1051,9 @@ void LBmethod::Streaming_Periodic() {
                 size_t x_str = (x + NX + cx[i]) % NX;
                 size_t y_str = (y + NY + cy[i]) % NY;
 
-                f_temp_i[INDEX(x_str, y_str, i)]  = f_i[INDEX(x, y, i)];
-                f_temp_e[INDEX(x_str, y_str, i)]  = f_e[INDEX(x, y, i)];
-                f_temp_n[INDEX(x_str, y_str, i)]  = f_n[INDEX(x, y, i)];
+                f_temp_i[INDEX(x_str, y_str, i)] = f_i[INDEX(x, y, i)];
+                f_temp_e[INDEX(x_str, y_str, i)] = f_e[INDEX(x, y, i)];
+                f_temp_n[INDEX(x_str, y_str, i)] = f_n[INDEX(x, y, i)];
             }
         }
     }
@@ -1129,9 +1070,7 @@ void LBmethod::Streaming_Periodic() {
 void LBmethod::Streaming_BounceBack() {
     //f(x,y,t+1)=f(x-cx,y-cy,t)
     // Parallelize the streaming step (over x and y)
-    //#pragma omp parallel  ////Needed for???
-    {
-        //#pragma omp for collapse(3) schedule(static)
+    #pragma omp for collapse(3) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 for (size_t i = 0; i < Q; ++i) {
@@ -1165,7 +1104,6 @@ void LBmethod::Streaming_BounceBack() {
                 }
             }
         }
-    }
     f_e.swap(f_temp_e);
     f_i.swap(f_temp_i);
     f_n.swap(f_temp_n);
@@ -1202,8 +1140,9 @@ void LBmethod::ThermalStreaming_Periodic() {
     g_i.swap(g_temp_i);
     g_n.swap(g_temp_n);
 }
+
 void LBmethod::ThermalStreaming_BounceBack() {
-    //#pragma omp for collapse(3) schedule(static)
+    #pragma omp for collapse(3) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
             for (size_t y = 0; y < NY; ++y) {
                 for (size_t i = 0; i < Q; ++i) {
@@ -1215,6 +1154,18 @@ void LBmethod::ThermalStreaming_BounceBack() {
                         g_temp_e[INDEX(x_str, y_str, i)] = g_e[INDEX(x, y, i)];
                         g_temp_i[INDEX(x_str, y_str, i)] = g_i[INDEX(x, y, i)];
                         g_temp_n[INDEX(x_str, y_str, i)] = g_n[INDEX(x, y, i)];
+                    }
+                    else if(x_str >= 0 && x_str <static_cast<int>(NX)){
+                        //We are outside so bounceback
+                        g_temp_e[INDEX(x_str,y,opp[i])]=g_e[INDEX(x,y,i)];
+                        g_temp_i[INDEX(x_str,y,opp[i])]=g_i[INDEX(x,y,i)];
+                        g_temp_n[INDEX(x_str,y,opp[i])]=g_n[INDEX(x,y,i)];
+                    }
+                    else if(y_str >= 0 && y_str <static_cast<int>(NY)){
+                        //We are outside so bounceback
+                        g_temp_e[INDEX(x,y_str,opp[i])]=g_e[INDEX(x,y,i)];
+                        g_temp_i[INDEX(x,y_str,opp[i])]=g_i[INDEX(x,y,i)];
+                        g_temp_n[INDEX(x,y_str,opp[i])]=g_n[INDEX(x,y,i)];
                     }
                     else{
                         //We are outside so bounceback
@@ -1236,6 +1187,8 @@ void LBmethod::Run_simulation() {
 
     // Inizializza CSV time series
     InitCSVTimeSeries();
+
+    InitDebugDump("debug_dump.txt");
 
     // Pre‐compute the frame sizes for each video:
     const int border       = 10;
@@ -1282,6 +1235,7 @@ void LBmethod::Run_simulation() {
     }
 
 
+
     // --- Temperature‐video (2 panels side by side) ---
     {
         int frame_w = 2 * tile_w;
@@ -1298,9 +1252,9 @@ void LBmethod::Run_simulation() {
             return;
         }
     }
-    UpdateMacro();
-    SolvePoisson();
-    computeEquilibrium();
+
+    
+
     //──────────────────────────────────────────────────────────────────────────────
     //  Main loop: for t = 0 … NSTEPS−1,
     //    [1] Update macros (ρ, u)
@@ -1310,6 +1264,10 @@ void LBmethod::Run_simulation() {
     //    [5] Visualization
     //──────────────────────────────────────────────────────────────────────────────
     for (size_t t=0; t<NSTEPS; ++t){
+        RecordCSVTimeStep(t);
+        UpdateMacro(); // rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
+        if(NX<11) DumpGridStateReadable(t, "UpdateMacro");
+
         if (t%1==0) {
             auto max_rho_e = std::max_element(rho_e.begin(), rho_e.end());
             auto min_rho_e = std::min_element(rho_e.begin(), rho_e.end());
@@ -1341,15 +1299,30 @@ void LBmethod::Run_simulation() {
             auto min_Ti = std::min_element(T_i.begin(), T_i.end());
             auto max_Tn = std::max_element(T_n.begin(), T_n.end());
             auto min_Tn = std::min_element(T_n.begin(), T_n.end());
+            double totmass = 0.0;
+            double totkinenerg = 0.0;
+            double totthermenerg =0.0;
+            for(size_t x=0;x<NX;++x){
+                for(size_t y=0;y<NY;++y){
+                    const size_t idx=INDEX(x,y);
+                    totmass+=rho_e[idx]+rho_i[idx]+rho_n[idx];
+                    totkinenerg+=0.5*rho_e[idx]*(ux_e[idx]*ux_e[idx]+uy_e[idx]*uy_e[idx])
+                                +0.5*rho_i[idx]*(ux_i[idx]*ux_i[idx]+uy_i[idx]*uy_i[idx])
+                                +0.5*rho_n[idx]*(ux_n[idx]*ux_n[idx]+uy_n[idx]*uy_n[idx]);
+                    totthermenerg+=T_e[idx]+T_i[idx]+T_n[idx];
+
+                }
+            }
+
             std::cout <<"Step:"<<t<<std::endl;
             std::cout <<"max rho_e= "<<*max_rho_e<<", min rho_e= "<<*min_rho_e<<std::endl;
             std::cout <<"max rho_i= "<<*max_rho_i<<", min rho_i= "<<*min_rho_i<<std::endl;
             std::cout <<"max rho_n= "<<*max_rho_n<<", min rho_n= "<<*min_rho_n<<std::endl;
             std::cout <<"max ux_e= "<<*max_uxe<<", min ux_e= "<<*min_uxe<<std::endl;
-            std::cout <<"max uy_e= "<<*max_uye<<", min uy_e= "<<*min_uye<<std::endl;
             std::cout <<"max ux_i= "<<*max_uxi<<", min ux_i= "<<*min_uxi<<std::endl;
-            std::cout <<"max uy_i= "<<*max_uyi<<", min uy_i= "<<*min_uyi<<std::endl;
             std::cout <<"max ux_n= "<<*max_uxn<<", min ux_n= "<<*min_uxn<<std::endl;
+            std::cout <<"max uy_e= "<<*max_uye<<", min uy_e= "<<*min_uye<<std::endl;
+            std::cout <<"max uy_i= "<<*max_uyi<<", min uy_i= "<<*min_uyi<<std::endl;
             std::cout <<"max uy_n= "<<*max_uyn<<", min uy_n= "<<*min_uyn<<std::endl;
             std::cout <<"max Ex= "<<*max_Ex<<", min Ex= "<<*min_Ex<<std::endl;
             std::cout <<"max Ey= "<<*max_Ey<<", min Ey= "<<*min_Ey<<std::endl;
@@ -1357,17 +1330,28 @@ void LBmethod::Run_simulation() {
             std::cout <<"max T_i= "<<*max_Ti<<", min T_i= "<<*min_Ti<<std::endl;
             std::cout <<"max T_n= "<<*max_Tn<<", min T_n= "<<*min_Tn<<std::endl;
             std::cout <<"max rho_q (latt)= "<<*max_rho<<", rho_q (latt)= "<<*min_rho<<std::endl;
+            std::cout <<"Parameters to check:"<<std::endl;
+            std::cout <<"totmass = "<<totmass<<" , totkinenerg= "<<totkinenerg<<" , totthermenerg= "<<totthermenerg<<std::endl;
             std::cout <<std::endl;
         }
-        RecordCSVTimeStep(t);
-        UpdateMacro(); // rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho
+        
         computeEquilibrium();
+        if(NX<11) DumpGridStateReadable(t, "ComputeEquilibrium");
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
+        if(NX<11) DumpGridStateReadable(t, "Collisions");
         ThermalCollisions();
         Streaming(); // f(x,y,t+1)=f(x-cx,y-cy,t)
-        ThermalStreaming_Periodic();
+        if(NX<11) DumpGridStateReadable(t, "Streaming");
         SolvePoisson();
-
+        if(NX<11) DumpGridStateReadable(t, "SolvePoisson");
+        if (t==1){
+            for(size_t x=0;x<NX;++x){
+                for(size_t y=0;y<NY;++y){
+                    Ex[INDEX(x,y)]=0.0;
+                    Ey[INDEX(x,y)]=0.0;
+                }
+            }
+        }
         VisualizationDensity();
         VisualizationVelocity();
         VisualizationTemperature();
@@ -1378,6 +1362,8 @@ void LBmethod::Run_simulation() {
     video_writer_temperature.release();
 
     CloseCSVAndPlot();
+
+    CloseDebugDump();
 
     std::cout << "Video saved, simulation ended " << std::endl;
 }
@@ -1397,8 +1383,8 @@ void LBmethod::VisualizationDensity() {
     static cv::Mat mat_rho_q(NY, NX, CV_32F);
 
     #pragma omp parallel for collapse(2)
-    for (int x = 0; x < static_cast<int>(NX); ++x) {
-        for (int y = 0; y < static_cast<int>(NY); ++y) {
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
             size_t idx = INDEX(x, y);
             mat_n_e.at<float>(y, x) = static_cast<float>(rho_e[idx]);
             mat_n_i.at<float>(y, x) = static_cast<float>(rho_i[idx]);
@@ -1456,8 +1442,8 @@ void LBmethod::VisualizationVelocity() {
     static cv::Mat ux_i_mat(NY, NX, CV_32F), uy_i_mat(NY, NX, CV_32F), ui_mag(NY, NX, CV_32F);
 
     #pragma omp parallel for collapse(2)
-    for (int x = 0; x < static_cast<int>(NX); ++x) {
-        for (int y = 0; y < static_cast<int>(NY); ++y) {
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
             size_t idx = INDEX(x, y);
             double ux_el = ux_e[idx], uy_el = uy_e[idx];
             double ux_ion = ux_i[idx], uy_ion = uy_i[idx];
@@ -1520,8 +1506,8 @@ void LBmethod::VisualizationTemperature() {
     static cv::Mat Te_mat(NY, NX, CV_32F), Ti_mat(NY, NX, CV_32F);
 
     #pragma omp parallel for collapse(2)
-    for (int x = 0; x < static_cast<int>(NX); ++x) {
-        for (int y = 0; y < static_cast<int>(NY); ++y) {
+    for (size_t x = 0; x < NX; ++x) {
+        for (size_t y = 0; y < NY; ++y) {
             size_t idx = INDEX(x, y);
             Te_mat.at<float>(y, x) = static_cast<float>(T_e[idx]);
             Ti_mat.at<float>(y, x) = static_cast<float>(T_i[idx]);
@@ -1594,10 +1580,15 @@ void LBmethod::InitCSVTimeSeries() {
     openAndHeader(file_ux_i, "ux_i");
     openAndHeader(file_uy_i, "uy_i");
     openAndHeader(file_ui_mag, "ui_mag");
+    openAndHeader(file_ux_n, "ux_n");
+    openAndHeader(file_uy_n, "uy_n");
+    openAndHeader(file_un_mag, "un_mag");
     openAndHeader(file_T_e, "T_e");
     openAndHeader(file_T_i, "T_i");
+    openAndHeader(file_T_n, "T_n");
     openAndHeader(file_rho_e, "rho_e");
     openAndHeader(file_rho_i, "rho_i");
+    openAndHeader(file_rho_n, "rho_n");
     openAndHeader(file_rho_q, "rho_q");
     openAndHeader(file_Ex, "Ex");
     openAndHeader(file_Ey, "Ey");
@@ -1608,8 +1599,9 @@ void LBmethod::RecordCSVTimeStep(size_t t) {
     // Per ciascun punto p, calcola valori
     std::vector<double> ux_e_v(sample_points.size()), uy_e_v(sample_points.size()), ue_mag_v(sample_points.size());
     std::vector<double> ux_i_v(sample_points.size()), uy_i_v(sample_points.size()), ui_mag_v(sample_points.size());
-    std::vector<double> T_e_v(sample_points.size()), T_i_v(sample_points.size());
-    std::vector<double> rho_e_v(sample_points.size()), rho_i_v(sample_points.size()), rho_q_v(sample_points.size());
+    std::vector<double> ux_n_v(sample_points.size()), uy_n_v(sample_points.size()), un_mag_v(sample_points.size());
+    std::vector<double> T_e_v(sample_points.size()), T_i_v(sample_points.size()), T_n_v(sample_points.size());
+    std::vector<double> rho_e_v(sample_points.size()), rho_i_v(sample_points.size()), rho_n_v(sample_points.size()), rho_q_v(sample_points.size());
     std::vector<double> Ex_v(sample_points.size()), Ey_v(sample_points.size()), E_mag_v(sample_points.size());
     for (size_t p = 0; p < sample_points.size(); ++p) {
         size_t i = sample_points[p].first;
@@ -1627,12 +1619,20 @@ void LBmethod::RecordCSVTimeStep(size_t t) {
         ux_i_v[p] = ux_i_;
         uy_i_v[p] = uy_i_;
         ui_mag_v[p] = std::sqrt(ux_i_*ux_i_ + uy_i_*uy_i_);
+        // Neutrali
+        double ux_n_ = ux_n[idx];
+        double uy_n_ = uy_n[idx];
+        ux_n_v[p] = ux_n_;
+        uy_n_v[p] = uy_n_;
+        un_mag_v[p] = std::sqrt(ux_n_*ux_n_ + uy_n_*uy_n_);
         // Temperature
         T_e_v[p] = T_e[idx];
         T_i_v[p] = T_i[idx];
+        T_n_v[p] = T_n[idx];
         // Densità
         rho_e_v[p] = rho_e[idx];
         rho_i_v[p] = rho_i[idx];
+        rho_n_v[p] = rho_n[idx];
         rho_q_v[p] = rho_q[idx];
         // Campo E
         double Ex_ = Ex[idx];
@@ -1655,10 +1655,15 @@ void LBmethod::RecordCSVTimeStep(size_t t) {
     writeLine(file_ux_i, ux_i_v);
     writeLine(file_uy_i, uy_i_v);
     writeLine(file_ui_mag, ui_mag_v);
+    writeLine(file_ux_n, ux_n_v);
+    writeLine(file_uy_n, uy_n_v);
+    writeLine(file_un_mag, un_mag_v);
     writeLine(file_T_e, T_e_v);
     writeLine(file_T_i, T_i_v);
+    writeLine(file_T_n, T_n_v);
     writeLine(file_rho_e, rho_e_v);
     writeLine(file_rho_i, rho_i_v);
+    writeLine(file_rho_n, rho_n_v);
     writeLine(file_rho_q, rho_q_v);
     writeLine(file_Ex, Ex_v);
     writeLine(file_Ey, Ey_v);
@@ -1674,10 +1679,15 @@ void LBmethod::CloseCSVAndPlot() {
     file_ux_i.close();
     file_uy_i.close();
     file_ui_mag.close();
+    file_ux_n.close();
+    file_uy_n.close();
+    file_un_mag.close();
     file_T_e.close();
     file_T_i.close();
+    file_T_n.close();
     file_rho_e.close();
     file_rho_i.close();
+    file_rho_n.close();
     file_rho_q.close();
     file_Ex.close();
     file_Ey.close();
@@ -1689,10 +1699,15 @@ void LBmethod::CloseCSVAndPlot() {
     PlotCSVWithOpenCV("timeseries_ux_i.csv", "plot_ux_i.png", "ux_i");
     PlotCSVWithOpenCV("timeseries_uy_i.csv", "plot_uy_i.png", "uy_i");
     PlotCSVWithOpenCV("timeseries_ui_mag.csv", "plot_ui_mag.png", "|u_i|");
+    PlotCSVWithOpenCV("timeseries_ux_n.csv", "plot_ux_n.png", "ux_n");
+    PlotCSVWithOpenCV("timeseries_uy_n.csv", "plot_uy_n.png", "uy_n");
+    PlotCSVWithOpenCV("timeseries_un_mag.csv", "plot_un_mag.png", "|u_n|");
     PlotCSVWithOpenCV("timeseries_T_e.csv", "plot_T_e.png", "T_e");
     PlotCSVWithOpenCV("timeseries_T_i.csv", "plot_T_i.png", "T_i");
+    PlotCSVWithOpenCV("timeseries_T_n.csv", "plot_T_n.png", "T_n");
     PlotCSVWithOpenCV("timeseries_rho_e.csv", "plot_rho_e.png", "rho_e");
     PlotCSVWithOpenCV("timeseries_rho_i.csv", "plot_rho_i.png", "rho_i");
+    PlotCSVWithOpenCV("timeseries_rho_n.csv", "plot_rho_n.png", "rho_n");
     PlotCSVWithOpenCV("timeseries_rho_q.csv", "plot_rho_q.png", "rho_q");
     PlotCSVWithOpenCV("timeseries_Ex.csv", "plot_Ex.png", "Ex");
     PlotCSVWithOpenCV("timeseries_Ey.csv", "plot_Ey.png", "Ey");
@@ -1860,4 +1875,234 @@ void LBmethod::PlotCSVWithOpenCV(const std::string& csv_filename,
 
     // Salva
     cv::imwrite(png_filename, img);
+}
+
+
+void LBmethod::InitDebugDump(const std::string& filename) {
+    // Apri in trunc mode
+    debug_file.open(filename, std::ios::out);
+    if (!debug_file.is_open()) {
+        std::cerr << "Errore: non posso aprire " << filename << " per debug dump\n";
+    }
+    // Facoltativo: intestazione
+    debug_file << "# Debug dump per LBmethod\n";
+}
+
+void LBmethod::CloseDebugDump() {
+    if (debug_file.is_open()) {
+        debug_file.close();
+    }
+}
+
+void LBmethod::DumpGridStateReadable(size_t step, const std::string& stage) {
+    if (!debug_file.is_open()) return;
+
+    // Header per questo dump
+    debug_file << "step = " << step << "\n";
+    debug_file << "stage = " << stage << "\n";
+
+    const int precision = 6; // numero di decimali per i valori
+
+    // 1) ux_e
+    debug_file << "ux_e\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = ux_e[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 2) uy_e
+    debug_file << "uy_e\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = uy_e[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 3) ux_i
+    debug_file << "ux_i\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = ux_i[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 4) uy_i
+    debug_file << "uy_i\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = uy_i[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 3) ux_n
+    debug_file << "ux_n\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = ux_n[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 4) uy_n
+    debug_file << "uy_n\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = uy_n[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 5) rho_q
+    debug_file << "rho_q\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = rho_q[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 6) rho_e
+    debug_file << "rho_e\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = rho_e[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 7) rho_i
+    debug_file << "rho_i\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = rho_i[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 7) rho_n
+    debug_file << "rho_n\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = rho_n[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 8) Ex
+    debug_file << "Ex\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = Ex[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 8) Ey
+    debug_file << "Ex\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = Ey[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+
+    // Funzione lambda per stampare le distribuzioni f per una specie
+    auto dump_f = [&](const std::string& label,
+                      const std::vector<double>& f_array)
+    {
+        debug_file << label << "\n";
+        // Direzioni in ordine di “stencil 3x3”:
+        static const int dir3x3[3][3] = {{6,2,5},{3,0,1},{7,4,8}};
+        debug_file << "directions arrangement:\n";
+        for (int rr = 0; rr < 3; ++rr) {
+            for (int cc = 0; cc < 3; ++cc) {
+                int d = dir3x3[rr][cc];
+                debug_file << d;
+                if (cc < 2) debug_file << ",";
+            }
+            debug_file << "\n";
+        }
+        // Per ciascuna direzione in quell’ordine, dump della griglia
+        for (int rr = 0; rr < 3; ++rr) {
+            for (int cc = 0; cc < 3; ++cc) {
+                int d = dir3x3[rr][cc];
+                // Ottieni (cx,cy) se vuoi stampare:
+                int cx_d = LBmethod::cx[d];
+                int cy_d = LBmethod::cy[d];
+                debug_file << label << " dir " << d
+                           << " (cx=" << cx_d << ",cy=" << cy_d << ")\n";
+                // Ora la griglia: y da NY-1 a 0, x da 0 a NX-1
+                for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+                    for (size_t ii = 0; ii < NX; ++ii) {
+                        size_t idx3 = INDEX(ii, jj, d);
+                        double v = f_array[idx3];
+                        debug_file << std::scientific << std::setprecision(precision) << v;
+                        if (ii + 1 < NX) debug_file << ",";
+                    }
+                    debug_file << "\n";
+                }
+            }
+        }
+    };
+
+    // 8) f_e
+    dump_f("f_e", f_e);
+    // 9) f_i
+    dump_f("f_i", f_i);
+    // 9) f_n
+    dump_f("f_n", f_n);
+    // 10) f_eq_e
+    dump_f("f_eq_e", f_eq_e);
+    // 11) f_eq_i
+    dump_f("f_eq_i", f_eq_i);
+    // 10) f_eq_n
+    dump_f("f_eq_n", f_eq_n);
+    // 11) f_eq_e_i
+    dump_f("f_eq_e_i", f_eq_e_i);
+    // 11) f_eq_i_e
+    dump_f("f_eq_i_e", f_eq_i_e);
+    // 11) f_eq_e_n
+    dump_f("f_eq_e_n", f_eq_e_n);
+    // 11) f_eq_n_e
+    dump_f("f_eq_n_e", f_eq_n_e);
+    // 11) f_eq_i_n
+    dump_f("f_eq_i_n", f_eq_i_n);
+    // 11) f_eq_n_i
+    dump_f("f_eq_n_i", f_eq_n_i);
+
+
+    // Riga vuota come separatore
+    debug_file << "\n";
+    // Flush per sicurezza (moltissimi dati)
+    debug_file.flush();
 }
