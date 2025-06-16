@@ -91,6 +91,12 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
     g_eq_e.assign(NX * NY * Q, 0.0);
     g_eq_i.assign(NX * NY * Q, 0.0);
     g_eq_n.assign(NX * NY * Q, 0.0);
+    g_eq_e_i.assign(NX * NY * Q, 0.0);
+    g_eq_e_n.assign(NX * NY * Q, 0.0);
+    g_eq_i_e.assign(NX * NY * Q, 0.0);
+    g_eq_i_n.assign(NX * NY * Q, 0.0);
+    g_eq_n_e.assign(NX * NY * Q, 0.0);
+    g_eq_n_i.assign(NX * NY * Q, 0.0);
     g_temp_e.assign(NX * NY * Q, 0.0);
     g_temp_i.assign(NX * NY * Q, 0.0);
     g_temp_n.assign(NX * NY * Q, 0.0);
@@ -972,7 +978,7 @@ void LBmethod::Collisions() {
 
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
-                
+
                 const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
                     (cx[i]*Ex_loc+cy[i]*Ey_loc)+
                     (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
@@ -1008,20 +1014,33 @@ void LBmethod::Collisions() {
 //  Now no Source is added
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::ThermalCollisions() {
+
     #pragma omp parallel for collapse(3)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
                 // Compute complete collisions terms
-                const double C_e = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te;
-                const double C_i = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti;
-                const double C_n = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn;
+                //const double C_Te = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te -(g_e[idx_3]-g_eq_e_i[idx_3]) / tau_Te_Ti -(g_e[idx_3]-g_eq_e_n[idx_3]) / tau_Te_Tn;
+                //const double C_Ti = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti -(g_i[idx_3]-g_eq_i_e[idx_3]) / tau_Te_Ti -(g_i[idx_3]-g_eq_i_n[idx_3]) / tau_Ti_Tn;
+                //const double C_Tn = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn -(g_n[idx_3]-g_eq_n_e[idx_3]) / tau_Te_Tn -(g_n[idx_3]-g_eq_n_i[idx_3]) / tau_Ti_Tn;
+                //g_temp_e[idx_3] = g_e[idx_3] + C_Te;
+                //g_temp_i[idx_3] = g_i[idx_3] + C_Ti;
+                //g_temp_n[idx_3] = g_n[idx_3] + C_Tn;
 
-                // Update distribution functions with Guo forcing term
-                g_temp_e[idx_3] = g_e[idx_3] + C_e;
-                g_temp_i[idx_3] = g_i[idx_3] + C_i;
-                g_temp_n[idx_3] = g_n[idx_3] + C_n;
+                const double v2 = static_cast<double>(cx[i] * cx[i] + cy[i] * cy[i]);
+                double S_Te = (f_e[idx_3] - f_eq_e[idx_3])/tau_e + (f_e[idx_3] - f_eq_e_i[idx_3])/tau_e_i + (f_e[idx_3] - f_eq_e_n[idx_3])/tau_e_n;
+                double S_Ti = (f_i[idx_3] - f_eq_i[idx_3])/tau_i + (f_i[idx_3] - f_eq_i_e[idx_3])/tau_e_i + (f_i[idx_3] - f_eq_i_n[idx_3])/tau_i_n;
+                double S_Tn = (f_n[idx_3] - f_eq_n[idx_3])/tau_n + (f_n[idx_3] - f_eq_n_e[idx_3])/tau_e_n + (f_n[idx_3] - f_eq_n_i[idx_3])/tau_i_n;
+
+                double dissipated_e = 0.5 * v2 * m_e * S_Te;
+                double dissipated_i = 0.5 * v2 * m_i * S_Ti;
+                double dissipated_n = 0.5 * v2 * m_n * S_Tn;
+
+                g_temp_e[idx_3] = g_e[idx_3] + dissipated_e;
+                g_temp_i[idx_3] = g_i[idx_3] + dissipated_i;
+                g_temp_n[idx_3] = g_n[idx_3] + dissipated_n;
+                
             }
         }
     }
@@ -1337,9 +1356,9 @@ void LBmethod::Run_simulation() {
         
         computeEquilibrium();
         if(NX<11) DumpGridStateReadable(t, "ComputeEquilibrium");
+        ThermalCollisions();
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
         if(NX<11) DumpGridStateReadable(t, "Collisions");
-        ThermalCollisions();
         Streaming(); // f(x,y,t+1)=f(x-cx,y-cy,t)
         if(NX<11) DumpGridStateReadable(t, "Streaming");
         SolvePoisson();
