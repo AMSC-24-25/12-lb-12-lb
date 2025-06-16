@@ -61,7 +61,7 @@ public:
              const double    T_e_SI_init,
              const double    T_i_SI_init,
              const double    T_n_SI_init,
-             const double    n_0_SI_init,
+             const double    n_e_SI_init,
              const double    n_n_SI_init,
              const PoissonType poisson_type,
              const BCType      bc_type,
@@ -86,6 +86,18 @@ public:
     void RecordCSVTimeStep(size_t t);
     void CloseCSVAndPlot();  // Chiude file e genera i PNG
 
+    // File unico di debug
+    std::ofstream debug_file;
+
+    // Inizializza il file di debug (da chiamare una volta prima del loop)
+    void InitDebugDump(const std::string& filename="debug_dump.txt");
+
+    // Scarica lo stato dopo un certo step e una certa fase ("UpdateMacro", "Collisions", ...)
+    void DumpGridStateReadable(size_t step, const std::string& stage);
+
+    // Chiude il file di debug (da chiamare alla fine)
+    void CloseDebugDump();
+
 private:
     //──────────────────────────────────────────────────────────────────────────────
     // 1) “Raw” (SI) Inputs
@@ -101,7 +113,7 @@ private:
     const double    T_e_SI_init;
     const double    T_i_SI_init;
     const double    T_n_SI_init;
-    const double    n_0_SI_init;
+    const double    n_e_SI_init;
     const double    n_n_SI_init;
     const PoissonType  poisson_type; // which Poisson solver to run
     const BCType       bc_type;      // which streaming/BC we use
@@ -120,19 +132,18 @@ private:
     static constexpr double m_ne_SI      = 1.67492749804e-27; // [kg]
     static constexpr double r_el_SI     = 2.8179403267e-15; // [m] (classical electron radius)
 
-    const double m_i_SI = A_ion * u_SI; //[kg] //neglet the electron mass
+    const double m_i_SI = A_ion * u_SI; //[kg]
     const double m_n_SI = A_ion * u_SI; //[kg]
     //──────────────────────────────────────────────────────────────────────────────
     // Physical conversion quantities from SI to LU:
     //──────────────────────────────────────────────────────────────────────────────
-    const double n0_SI = n_0_SI_init;
-    const double nn_SI = n_n_SI_init;
+    const double n0_SI = n_e_SI_init;
 
     const double M0_SI = m_e_SI; // physical mass [kg]
     const double T0_SI = T_e_SI_init; // physical temperature [K]
     const double Q0_SI = e_charge_SI; // physical charge [C]
     const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI))*1e-2; // physical lenght = lambda_D [m]
-    const double t0_SI = 1.0 / std::sqrt(3.0 * n0_SI * Q0_SI * Q0_SI / (epsilon0_SI * M0_SI))*1e-2; // physical time = rad(3)/w_p [s]
+    const double t0_SI = std::sqrt(epsilon0_SI * M0_SI / (3.0 * n0_SI * Q0_SI * Q0_SI))  *1e-2; // physical time = rad(3)/w_p [s]
     //other useful obtained scaling quantities
     const double E0_SI = M0_SI*L0_SI/(Q0_SI*t0_SI*t0_SI); // physical electric field [V/m]
     const double v0_SI = L0_SI / t0_SI; // physical velocity [m/s]
@@ -151,10 +162,10 @@ private:
     //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
     //const double tau_e=nu_e/cs2+0.5;
     // Relaxation times (to be set in constructor)
-    const double tau_e = 0.55, tau_i = 0.7, tau_e_i = 1.0,
-                 tau_n = 0.7, tau_e_n = 1, tau_i_n= 1;
-    const double tau_Te = 0.6, tau_Ti = 1.0, tau_Te_Ti = 2.0,
-                 tau_Tn = 1.0, tau_Tn_Te = 2.0, tau_Tn_Ti = 2.0;
+    const double tau_e = 100.0, tau_i = 150.0, tau_n = 2.0,
+                 tau_e_i = 400.0, tau_e_n = 2.0,  tau_i_n = 1.0;
+    const double tau_Te = 1.5, tau_Ti = 2.0, tau_Tn = 2.0,
+                 tau_Te_Ti = 2.5,  tau_Te_Tn = 2.5, tau_Ti_Tn =2.0; 
 
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
@@ -162,23 +173,22 @@ private:
 
     // Converted temperatures in lattice units:
     const double T_e_init = T_e_SI_init / T0_SI, 
-                 T_i_init = T_i_SI_init / T0_SI, 
+                 T_i_init = T_i_SI_init / T0_SI,
                  T_n_init = T_n_SI_init / T0_SI; // initial temperatures in lattice units
 
     // mass in lattice units:
-    const double m_e = m_e_SI / M0_SI; // electron mass in lattice units
-    const double m_i = m_i_SI / M0_SI; // ion mass in electron masses (for convenience)
-    const double m_n = m_n_SI / M0_SI; // neutral mass in electron masses (for convenience)
+    const double m_e = m_e_SI / M0_SI, // electron mass in lattice units
+                 m_i = m_i_SI / M0_SI, // ion mass in electron masses (for convenience)
+                 m_n = m_n_SI / M0_SI;
 
     // Converted charge in lattice units:
     const double q_e = - e_charge_SI / Q0_SI; // electron charge in lattice units
     const double q_i = Z_ion * e_charge_SI / Q0_SI; // ion charge in lattice units
 
     // Initial density in lattice unit
-    const double rho_e_init = m_e * n_0_SI_init / n0_SI; // electron density in lattice units
-    const double rho_i_init = m_i * n_0_SI_init / n0_SI / Z_ion; // ion density in lattice units. The idea behind /Z_ion is the quasi neutrality of the plamsa at the start
-    const double rho_n_init = m_n * n_n_SI_init / n0_SI; 
-
+    const double rho_e_init = m_e * n_e_SI_init / n0_SI, // electron density in lattice units
+                 rho_i_init = m_i * n_e_SI_init / n0_SI / Z_ion, // ion density in lattice units. The idea behind /Z_ion is the quasi neutrality of the plamsa at the start
+                 rho_n_init = m_n * n_n_SI_init / n0_SI;
     //──────────────────────────────────────────────────────────────────────────────
     // 4) D2Q9 Setup
     //──────────────────────────────────────────────────────────────────────────────
@@ -197,26 +207,26 @@ private:
                           f_i,    f_temp_i,
                           f_n,    f_temp_n;
     // Equilibrium distribution functions
-    std::vector<double>   f_eq_e,    f_eq_i,   f_eq_n,  
+    std::vector<double>   f_eq_e,    f_eq_i,    f_eq_n,   
                           f_eq_e_i,  f_eq_i_e,
                           f_eq_e_n,  f_eq_n_e,
-                          f_eq_i_n,  f_eq_n_i;    
+                          f_eq_i_n,  f_eq_n_i;
                          
     // Thermal distribution function
     std::vector<double>   g_e,    g_temp_e,
                           g_i,    g_temp_i,
                           g_n,    g_temp_n;
     // Equilibrium distribution functions
-    std::vector<double>   g_eq_e,    g_eq_i,   g_eq_n, 
+    std::vector<double>   g_eq_e,    g_eq_i,    g_eq_n,
                           g_eq_e_i,  g_eq_i_e,
                           g_eq_e_n,  g_eq_n_e,
                           g_eq_i_n,  g_eq_n_i;
 
     // Macroscopic moments (per cell)
-    std::vector<double>   rho_e, rho_i, rho_n;      // densities
-    std::vector<double>   ux_e,  uy_e,             // velocities
-                          ux_i,  uy_i,
-                          ux_n,  uy_n,
+    std::vector<double>   rho_e,  rho_i, rho_n;      // densities
+    std::vector<double>   ux_e,   uy_e,       // velocities
+                          ux_i,   uy_i,
+                          ux_n,   uy_n,
                           ux_e_i, uy_e_i,
                           ux_e_n, uy_e_n,
                           ux_i_n, uy_i_n;
@@ -292,6 +302,7 @@ private:
     void Streaming();
     void Streaming_Periodic();
     void Streaming_BounceBack();
+
     void ThermalStreaming_Periodic();
     void ThermalStreaming_BounceBack();
 
@@ -329,19 +340,19 @@ private:
     static constexpr double CHARGE_MAX  = 1.5;
 
     // --- Velocity visualization ranges
-    static constexpr double UX_E_MIN = -1e-8;
-    static constexpr double UX_E_MAX =  1e-8;
-    static constexpr double UY_E_MIN = -1e-10;
-    static constexpr double UY_E_MAX =  1e-10;
+    static constexpr double UX_E_MIN = -1e-7;
+    static constexpr double UX_E_MAX =  1e-7;
+    static constexpr double UY_E_MIN = -1e-7;
+    static constexpr double UY_E_MAX =  1e-7;
     static constexpr double UE_MAG_MIN = 0.0;
-    static constexpr double UE_MAG_MAX = 5e-5;
+    static constexpr double UE_MAG_MAX = 1e-7;
 
-    static constexpr double UX_I_MIN = -1e-10;
-    static constexpr double UX_I_MAX =  1e-10;
-    static constexpr double UY_I_MIN = -1e-10;
-    static constexpr double UY_I_MAX =  1e-10;
+    static constexpr double UX_I_MIN = -1e-7;
+    static constexpr double UX_I_MAX =  1e-7;
+    static constexpr double UY_I_MIN = -1e-7;
+    static constexpr double UY_I_MAX =  1e-7;
     static constexpr double UI_MAG_MIN = 0.0;
-    static constexpr double UI_MAG_MAX = 1e-8;
+    static constexpr double UI_MAG_MAX = 1e-7;
 
     // --- Temperature visualization ranges
     static constexpr double TEMP_E_MIN = 0.3;
