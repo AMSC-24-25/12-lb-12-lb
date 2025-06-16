@@ -162,10 +162,11 @@ private:
     //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
     //const double tau_e=nu_e/cs2+0.5;
     // Relaxation times (to be set in constructor)
-    const double tau_e = 100.0, tau_i = 150.0, tau_n = 2.0,
-                 tau_e_i = 400.0, tau_e_n = 2.0,  tau_i_n = 1.0;
-    const double tau_Te = 1.5, tau_Ti = 2.0, tau_Tn = 2.0,
-                 tau_Te_Ti = 2.5,  tau_Te_Tn = 2.5, tau_Ti_Tn =2.0; 
+    const double tau_e = 400.0, tau_i = 300.0, tau_n = 1.0,
+                 tau_e_i = 200.0, tau_e_n = 6.0,  tau_i_n = 5.0;
+
+    const double tau_Te = 400.0 , tau_Ti = 300.0, tau_Tn = 1.0,
+                 tau_Te_Ti = 200.0,  tau_Te_Tn = 6.0, tau_Ti_Tn = 5.0; 
 
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
@@ -334,9 +335,9 @@ private:
     cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
     // Global‐range trackers for visualization:
     // --- Density and charge visualization ranges
-    static constexpr double DENSITY_MIN = 0.5;
+    static constexpr double DENSITY_MIN = 0.01;
     static constexpr double DENSITY_MAX = 1.5;
-    static constexpr double CHARGE_MIN  = 0.5;
+    static constexpr double CHARGE_MIN  = 0.01;
     static constexpr double CHARGE_MAX  = 1.5;
 
     // --- Velocity visualization ranges
@@ -355,9 +356,9 @@ private:
     static constexpr double UI_MAG_MAX = 1e-7;
 
     // --- Temperature visualization ranges
-    static constexpr double TEMP_E_MIN = 0.3;
+    static constexpr double TEMP_E_MIN = 0.01;
     static constexpr double TEMP_E_MAX = 1.0;
-    static constexpr double TEMP_I_MIN = 0.1;
+    static constexpr double TEMP_I_MIN = 0.001;
     static constexpr double TEMP_I_MAX = 0.5;
 
     
