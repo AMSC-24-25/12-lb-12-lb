@@ -108,20 +108,20 @@ In order to avoid numerical instability due to the fact that the velocity is, at
 We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:<br /><br />
 STRONG SCALABILITY:
 <div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="code/video/Strong_fede.png" alt="Strong scalability_F" width="300">
-  <img src="code/video/Strong_Scalability_P.png" alt="Strong scalability_P" width="300">
+  <img src="code/LBM_classic/video/Strong_fede.png" alt="Strong scalability_F" width="300">
+  <img src="code/LBM_classic/video/Strong_Scalability_P.png" alt="Strong scalability_P" width="300">
 </div>
 <br /><br /> 
 WEAK SCALABILITY:
 <div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="code/video/Weak_fede.png" alt="Weak scalability_F" width="300">
-  <img src="code/video/Weak_Scalability_P.png" alt="Weak scalability_P" width="300">
+  <img src="code/LBM_classic/video/Weak_fede.png" alt="Weak scalability_F" width="300">
+  <img src="code/LBM_classic/video/Weak_Scalability_P.png" alt="Weak scalability_P" width="300">
 </div>
 <br /><br /> 
 GRID SIZE IMPACT:
 <div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="code/video/Grid_fede.png" alt="Grid_size_impact_F" width="300">
-  <img src="code/video/Grid_size_impact_P.png" alt="Grid_size_impact_P" width="300">
+  <img src="code/LBM_classic/video/Grid_fede.png" alt="Grid_size_impact_F" width="300">
+  <img src="code/LBM_classic/video/Grid_size_impact_P.png" alt="Grid_size_impact_P" width="300">
 </div>
 <br /><br /> 
 
