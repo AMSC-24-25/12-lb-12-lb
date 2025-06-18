@@ -22,7 +22,7 @@
 //--------------------------------------------------------------------------------
 // Enumerations for choosing Poisson solver and Streaming/BC type
 //--------------------------------------------------------------------------------
-enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4, MG=5};
+enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4};
 enum class BCType      { PERIODIC = 0, BOUNCE_BACK = 1 };
 //--------------------------------------------------------------------------------
 // LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
@@ -137,12 +137,13 @@ private:
     //const double tau_e=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i=nu_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_n=nu_n*t0_SI/(cs2*L0_SI*L0_SI)+0.5, 
     //             tau_e_i=nu_e_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_e_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5;
    
+    const double Kb = kB_SI* (t0_SI * t0_SI * T0_SI)/(L0_SI * L0_SI * M0_SI);
+
     // Otherwise we have to set values for tau based on previous knowledge
     const double tau_e = 5.0, tau_i = 3.0, tau_n = 1.0,
                  tau_e_i = 6.0, tau_e_n = 4.0,  tau_i_n = 2.0;
-    const double tau_Te = 1.5, tau_Ti = 2.0, tau_Tn = 2.0,
-                 tau_Te_Ti = 2.5,  tau_Te_Tn = 2.5, tau_Ti_Tn =2.0; 
-
+    //Thermal tau are considered equal to the f ones
+    
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
                  Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
@@ -264,7 +265,7 @@ private:
     void Initialize();
 
     // (b) Compute equilibrium f_eq for given (ρ, u) and c_s^2
-    void computeEquilibrium();
+    void ComputeEquilibrium();
     
     // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F
     void UpdateMacro();
@@ -364,9 +365,9 @@ private:
     static constexpr double UI_MAG_MAX = 1e-7;
 
     // --- Temperature visualization ranges
-    static constexpr double TEMP_E_MIN = 0.3;
-    static constexpr double TEMP_E_MAX = 1.0;
-    static constexpr double TEMP_I_MIN = 0.1;
+    static constexpr double TEMP_E_MIN = 1e-6;
+    static constexpr double TEMP_E_MAX = 1;
+    static constexpr double TEMP_I_MIN = 1e-6;
     static constexpr double TEMP_I_MAX = 0.5;
 
     
