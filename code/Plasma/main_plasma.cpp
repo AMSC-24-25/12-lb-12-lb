@@ -12,11 +12,11 @@ int main(int argc, char* argv[]) {
     //────────────────────────────────────────────────────────────────────────────
 
     // (b) Grid resolution:
-    const size_t NX = 500;       // # nodes in x
-    const size_t NY = 500;       // # nodes in y
+    const size_t NX = 100;       // # nodes in x
+    const size_t NY = 100;       // # nodes in y
 
     // (c) Number of time‐steps:
-    const size_t NSTEPS = 30; // total number of time steps
+    const size_t NSTEPS = 50; // total number of time steps
 
     // (d) Ion parameters:
     const size_t Z_ion = 1;                   // atomic number
@@ -34,8 +34,8 @@ int main(int argc, char* argv[]) {
     const double T_n_SI_init = 300;
 
     // (g) External E‐field in SI [V/m]:
-    const double Ex_SI = 1e-3;     // External electric field along x [V/m]
-    const double Ey_SI = 0;     // External electric field along y [V/m]
+    const double Ex_SI = 1e-2;     // External electric field along x [V/m]
+    const double Ey_SI = 0.0;     // External electric field along y [V/m]
 
     // (h) Choose Poisson solver and BC type:
     const PoissonType poisson_solver = PoissonType::FFT;
