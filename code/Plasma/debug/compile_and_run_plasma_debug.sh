@@ -7,7 +7,7 @@ export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
 
 # Check for invalid input
 if [ "$#" -gt 1 ]; then
-  echo "Usage: ./compile_and_run_plasma.sh [number_of_cores]"
+  echo "Usage: ./compile_and_run_plasma_debug.sh [number_of_cores]"
   exit 1
 fi
 
