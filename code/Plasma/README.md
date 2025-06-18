@@ -1,6 +1,6 @@
 # Lattice Boltzmann Method- PLASMA
 The purpose of this library is to simulate, using a LB method, a three-populations plasma, including a simple thermal coupling through a DDF approach. <br />
-The physical approch and the description of the methods used are discussed in details in the report.
+The physics behind and the description of the methods used are discussed in details in the report.
 
 ## Compiling
 In order not to have problems in the compilation we need to be sure that all the packets needed are correctly installed: <br /> 
