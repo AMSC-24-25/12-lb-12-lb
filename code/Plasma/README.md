@@ -1,5 +1,4 @@
 # CFD library for Lattice Boltzmann Method- PLASMA
-The main goal is to write a library in order to exploit LBM method using the arguments of the course AMSC
 
 ## Compiling
 In order not to have problems in the compilation we need to be sure that all the packets needed are correctly installed: <br /> 
@@ -28,23 +27,8 @@ cd code <br />
 chmod +x compile_and_run.sh <br />
 ./compile_and_run.sh <number_of_cores> <br />
 <br />
-and sobstitute <number_of_cores> with the number of cores with which you want to run the program. If you don't insert it it will simply run with the maximum number of threads in your pc
+and sobstitute <number_of_cores> with the number of cores with which you want to run the program. If you don't insert it it will simply run with the maximum number of threads in your pc.
 The first one is just to move in the folder of the code while the second compile the file with all the information needed to compute the program and the third one run that file.  
 
 ## Overview
-The physical approch ad the methods used are described in details in the paper
-
-### Printing result and videomaking
-We have implemented the visualization part using the C-native library OpenCV in order to have fast performances. <br />
-
-
-## Key feature
-### Parallelization
-We decide to exploit the parallelizion with openmp. We exploited strong and weak scalability test on the latest version and get the following results:<br /><br />
-STRONG SCALABILITY:
-
-WEAK SCALABILITY:
-
-GRID SIZE IMPACT:
-
-
+The physical approch and the description of the methods used are discussed in details in the report.
