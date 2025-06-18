@@ -93,6 +93,13 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
     g_temp_i.assign(NX * NY * Q, 0.0);
     g_temp_n.assign(NX * NY * Q, 0.0);
 
+    g_eq_e_i.assign(NX * NY * Q, 0.0);
+    g_eq_i_e.assign(NX * NY * Q, 0.0);
+    g_eq_e_n.assign(NX * NY * Q, 0.0);
+    g_eq_n_e.assign(NX * NY * Q, 0.0);
+    g_eq_i_n.assign(NX * NY * Q, 0.0);
+    g_eq_n_i.assign(NX * NY * Q, 0.0);
+
     rho_e.assign(NX * NY, 0.0);
     rho_i.assign(NX * NY, 0.0);
     rho_n.assign(NX * NY, 0.0);
