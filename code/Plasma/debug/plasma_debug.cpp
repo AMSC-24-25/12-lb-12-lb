@@ -1,4 +1,4 @@
-#include "plasma.hpp"
+#include "plasma_debug.hpp"
 #include <cmath>
 #include <omp.h>
 #include <opencv2/imgproc.hpp>
@@ -75,7 +75,7 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
     f_n.assign(NX * NY * Q, 0.0);
     f_temp_n.assign(NX * NY * Q, 0.0);
     f_eq_n.assign(NX * NY * Q, 0.0);
-    //if needed
+    
     f_eq_e_i.assign(NX * NY * Q, 0.0);
     f_eq_i_e.assign(NX * NY * Q, 0.0);
     f_eq_e_n.assign(NX * NY * Q, 0.0);
@@ -140,8 +140,6 @@ LBmethod::LBmethod(const size_t    _NSTEPS,
         << "and equilibrium parameters:\n"
         << "tau_e = " << tau_e << ", tau_i = " << tau_i << ", tau_n = " << tau_n << "\n"
         << "tau_e_i = " << tau_e_i << ", tau_e_n = " << tau_e_n << ", tau_i_n = " << tau_i_n << "\n"
-        << "tau_Te = " << tau_Te << ", tau_Ti = " << tau_Ti << ", tau_Tn = " << tau_Tn << "\n"
-        << "tau_Te_Ti = " << tau_Te_Ti << ", tau_Te_Tn = " << tau_Te_Tn << ", tau_Ti_Tn = " << tau_Ti_Tn << "\n"
         <<std::endl;
 }
 
@@ -177,7 +175,7 @@ void LBmethod::Initialize() {
 //──────────────────────────────────────────────────────────────────────────────
 //  Compute D2Q9 equilibrium for a given (ρ, ux, uy, T) and sound‐speed cs2.
 //──────────────────────────────────────────────────────────────────────────────
-void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe can be used as a function
+void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe can be used as a function
     // Compute the equilibrium distribution function f_eq
     #pragma omp parallel for collapse(2) schedule(static)
         for (size_t x = 0; x < NX; ++x) {
@@ -277,6 +275,42 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         (cu_n * cu_n ) / (2.0 * cs2 *cs2) -
                         u2_n / (2.0 * cs2)
                     );
+                    g_eq_e_i[idx_3]= w[i]*T_e[idx]*(
+                        1.0 +
+                        (cu_e_i / cs2) +
+                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
+                        u2_e_i / (2.0 * cs2)
+                    );
+                    g_eq_i_e[idx_3]= w[i]*T_i[idx]*(
+                        1.0 +
+                        (cu_e_i / cs2) +
+                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
+                        u2_e_i / (2.0 * cs2)
+                    );
+                    g_eq_e_n[idx_3]= w[i]*T_e[idx]*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    g_eq_n_e[idx_3]= w[i]*T_n[idx]*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    g_eq_i_n[idx_3]= w[i]*T_i[idx]*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
+                    g_eq_n_i[idx_3]= w[i]*T_n[idx]*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
                 }
             }
         }
@@ -361,6 +395,7 @@ void LBmethod::UpdateMacro() {
                         uy_e[idx]=0.01*cs2;
                     else
                         uy_e[idx] = uy_loc_e / rho_loc_e;
+                    
                     ux_e[idx] += 0.5 * q_e * Ex[idx] / m_e;
                     uy_e[idx] += 0.5 * q_e * Ey[idx] / m_e;
                     T_e[idx] = T_loc_e;
@@ -380,6 +415,7 @@ void LBmethod::UpdateMacro() {
                         uy_i[idx]=0.00001*cs2;
                     else
                         uy_i[idx] = uy_loc_i / rho_loc_i;
+
                     ux_i[idx] += 0.5 * q_i * Ex[idx] / m_i;
                     uy_i[idx] += 0.5 * q_i * Ey[idx] / m_i;
                     T_i[idx] = T_loc_i;
@@ -1159,15 +1195,37 @@ void LBmethod::ThermalCollisions() {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
+                const size_t idx_2 = INDEX(x, y);
+
+                const double term_ee=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e)*(1-1/tau_e)-2.0*(1.0-1.0/tau_e)*rho_e[idx_2]-Q*f_eq_e[idx_3]/tau_e)/(2.0*(2.0*(1.0-1.0/tau_e)+Q*f_eq_e[idx_3]/tau_e));
+                const double term_ei=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_e[idx_2]-Q*f_eq_e_i[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_e_i[idx_3]/tau_e_i));
+                const double term_en=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_e[idx_2]-Q*f_eq_e_n[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_e_n[idx_3]/tau_e_n));
+
+                const double term_ii=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i)*(1-1/tau_i)-2.0*(1.0-1.0/tau_i)*rho_i[idx_2]-Q*f_eq_i[idx_3]/tau_i)/(2.0*(2.0*(1.0-1.0/tau_i)+Q*f_eq_i[idx_3]/tau_i));
+                const double term_ie=(2.0*rho_i[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_i[idx_2]-Q*f_eq_i_e[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_i_e[idx_3]/tau_e_i));
+                const double term_in=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_i[idx_2]-Q*f_eq_i_n[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_i_n[idx_3]/tau_i_n));
+
+                const double term_nn=(2.0*rho_n[idx_2]*(1.0-1.0/tau_n)*(1-1/tau_n)-2.0*(1.0-1.0/tau_n)*rho_n[idx_2]-Q*f_eq_n[idx_3]/tau_n)/(2.0*(2.0*(1.0-1.0/tau_n)+Q*f_eq_n[idx_3]/tau_n));
+                const double term_ne=(2.0*rho_n[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_n[idx_2]-Q*f_eq_n_e[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_n_e[idx_3]/tau_e_n));
+                const double term_ni=(2.0*rho_n[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_n[idx_2]-Q*f_eq_n_i[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_n_i[idx_3]/tau_i_n));
+
+                const double DeltaE_e= rho_e[idx_2]*(term_ee+ term_ei+term_en)*(ux_e[idx_2]*ux_e[idx_2]+uy_e[idx_2]*uy_e[idx_2]);
+                const double DeltaE_i= rho_i[idx_2]*(term_ii+ term_ie+term_in)*(ux_i[idx_2]*ux_i[idx_2]+uy_i[idx_2]*uy_i[idx_2]);
+                const double DeltaE_n= rho_n[idx_2]*(term_nn+ term_ne+term_ni)*(ux_n[idx_2]*ux_n[idx_2]+uy_n[idx_2]*uy_n[idx_2]);
+
+                const double DeltaT_e= - DeltaE_e/Kb;
+                const double DeltaT_i= - DeltaE_i/Kb;
+                const double DeltaT_n= - DeltaE_n/Kb;
+
                 // Compute complete collisions terms
-                const double C_e = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te;
-                const double C_i = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti;
-                const double C_n = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn;
+                const double C_Te = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_e -(g_e[idx_3]-g_eq_e_i[idx_3]) / tau_e_i -(g_e[idx_3]-g_eq_e_n[idx_3]) / tau_e_n;
+                const double C_Ti = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_i -(g_i[idx_3]-g_eq_i_e[idx_3]) / tau_e_i -(g_i[idx_3]-g_eq_i_n[idx_3]) / tau_i_n;
+                const double C_Tn = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_n -(g_n[idx_3]-g_eq_n_e[idx_3]) / tau_e_n -(g_n[idx_3]-g_eq_n_i[idx_3]) / tau_i_n;
 
                 // Update distribution functions with Guo forcing term
-                g_temp_e[idx_3] = g_e[idx_3] + C_e;
-                g_temp_i[idx_3] = g_i[idx_3] + C_i;
-                g_temp_n[idx_3] = g_n[idx_3] + C_n;
+                g_temp_e[idx_3] = g_e[idx_3]+ C_Te + DeltaT_e;
+                g_temp_i[idx_3] = g_i[idx_3]+ C_Ti + DeltaT_i;
+                g_temp_n[idx_3] = g_n[idx_3]+ C_Tn + DeltaT_n;
             }
         }
     }
@@ -1447,7 +1505,7 @@ void LBmethod::Run_simulation() {
             auto min_Tn = std::min_element(T_n.begin(), T_n.end());
             double totmass = 0.0;
             double totkinenerg = 0.0;
-            double totthermenerg =0.0;
+            double totT =0.0;
             for(size_t x=0;x<NX;++x){
                 for(size_t y=0;y<NY;++y){
                     const size_t idx=INDEX(x,y);
@@ -1455,7 +1513,7 @@ void LBmethod::Run_simulation() {
                     totkinenerg+=0.5*rho_e[idx]*(ux_e[idx]*ux_e[idx]+uy_e[idx]*uy_e[idx])
                                 +0.5*rho_i[idx]*(ux_i[idx]*ux_i[idx]+uy_i[idx]*uy_i[idx])
                                 +0.5*rho_n[idx]*(ux_n[idx]*ux_n[idx]+uy_n[idx]*uy_n[idx]);
-                    totthermenerg+=T_e[idx]/rho_e[idx]+T_i[idx]/rho_i[idx]+T_n[idx]/rho_n[idx];
+                    totT += ( T_e[idx] + T_i[idx] + T_n[idx]);
 
                 }
             }
@@ -1477,15 +1535,15 @@ void LBmethod::Run_simulation() {
             std::cout <<"max T_n= "<<*max_Tn<<", min T_n= "<<*min_Tn<<std::endl;
             std::cout <<"max rho_q (latt)= "<<*max_rho<<", rho_q (latt)= "<<*min_rho<<std::endl;
             std::cout <<"Parameters to check:"<<std::endl;
-            std::cout <<"totmass = "<<totmass<<" , totkinenerg= "<<totkinenerg<<" , totthermenerg= "<<totthermenerg<<std::endl;
+            std::cout <<"totmass = "<<totmass<<" , totkinenerg= "<<totkinenerg<<" , totT= "<<totT<<std::endl;
             std::cout <<std::endl;
         }
         
-        computeEquilibrium();
+        ComputeEquilibrium();
         if(NX<11) DumpGridStateReadable(t, "ComputeEquilibrium");
+        ThermalCollisions();
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
         if(NX<11) DumpGridStateReadable(t, "Collisions");
-        ThermalCollisions();
         Streaming(); // f(x,y,t+1)=f(x-cx,y-cy,t)
         if(NX<11) DumpGridStateReadable(t, "Streaming");
         SolvePoisson();
