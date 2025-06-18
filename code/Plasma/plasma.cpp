@@ -283,6 +283,42 @@ void LBmethod::computeEquilibrium() {//It's the same for all the species, maybe 
                         (cu_n * cu_n ) / (2.0 * cs2 *cs2) -
                         u2_n / (2.0 * cs2)
                     );
+                    g_eq_e_i[idx_3]= w[i]*T_e[idx]*(
+                        1.0 +
+                        (cu_e_i / cs2) +
+                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
+                        u2_e_i / (2.0 * cs2)
+                    );
+                    g_eq_i_e[idx_3]= w[i]*T_i[idx]*(
+                        1.0 +
+                        (cu_e_i / cs2) +
+                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
+                        u2_e_i / (2.0 * cs2)
+                    );
+                    g_eq_e_n[idx_3]= w[i]*T_e[idx]*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    g_eq_n_e[idx_3]= w[i]*T_n[idx]*(
+                        1.0 +
+                        (cu_e_n / cs2) +
+                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
+                        u2_e_n / (2.0 * cs2)
+                    );
+                    g_eq_i_n[idx_3]= w[i]*T_i[idx]*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
+                    g_eq_n_i[idx_3]= w[i]*T_n[idx]*(
+                        1.0 +
+                        (cu_i_n / cs2) +
+                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
+                        u2_i_n / (2.0 * cs2)
+                    );
                 }
             }
         }
@@ -352,15 +388,22 @@ void LBmethod::UpdateMacro() {
                     T_loc_n += g_n[idx_3];
                     
                 }
-                if (rho_loc_e<1e-10){//in order to avoid instabilities (can be removed if the code is stable)
+                if (rho_loc_e<1e-10){//in order to avoid instabilities
                     rho_e[idx] = 0.0;
                     ux_e[idx] = 0.0;
                     uy_e[idx] = 0.0;
                     T_e[idx] = 0.0;
                 } else{
                     rho_e[idx] = rho_loc_e;
-                    ux_e[idx] = ux_loc_e / rho_loc_e;
-                    uy_e[idx] = uy_loc_e / rho_loc_e;
+                    if(ux_loc_e>=rho_loc_e || ux_loc_e>=-rho_loc_e)
+                        ux_e[idx]=0;
+                    else
+                        ux_e[idx] = ux_loc_e / rho_loc_e;
+                    if(uy_loc_e>=rho_loc_e || uy_loc_e>=-rho_loc_e)
+                        uy_e[idx]=0;
+                    else
+                        uy_e[idx] = uy_loc_e / rho_loc_e;
+
                     ux_e[idx] += 0.5 * q_e * Ex[idx] / m_e;
                     uy_e[idx] += 0.5 * q_e * Ey[idx] / m_e;
                     T_e[idx] = T_loc_e;
@@ -372,8 +415,15 @@ void LBmethod::UpdateMacro() {
                     T_i[idx] = 0.0;
                 }else {
                     rho_i[idx] = rho_loc_i;
-                    ux_i[idx] = ux_loc_i / rho_loc_i;
-                    uy_i[idx] = uy_loc_i / rho_loc_i;
+                    if(ux_loc_i>=rho_loc_i || ux_loc_i>=-rho_loc_i)
+                        ux_i[idx]=0;
+                    else
+                        ux_i[idx] = ux_loc_i / rho_loc_i;
+                    if(uy_loc_i>=rho_loc_i || uy_loc_i>=-rho_loc_i)
+                        uy_i[idx]=0;
+                    else
+                        uy_i[idx] = uy_loc_i / rho_loc_i;
+                        
                     ux_i[idx] += 0.5 * q_i * Ex[idx] / m_i;
                     uy_i[idx] += 0.5 * q_i * Ey[idx] / m_i;
                     T_i[idx] = T_loc_i;
@@ -1014,32 +1064,51 @@ void LBmethod::Collisions() {
 //  Now no Source is added
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::ThermalCollisions() {
-
+    //The energy loss in the collisions is tranfered into heat as a source term
+    
     #pragma omp parallel for collapse(3)
     for (size_t x = 0; x < NX; ++x) {
         for (size_t y = 0; y < NY; ++y) {
             for (size_t i = 0; i < Q; ++i) {
                 const size_t idx_3 = INDEX(x, y, i);
-                // Compute complete collisions terms
-                //const double C_Te = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te -(g_e[idx_3]-g_eq_e_i[idx_3]) / tau_Te_Ti -(g_e[idx_3]-g_eq_e_n[idx_3]) / tau_Te_Tn;
-                //const double C_Ti = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti -(g_i[idx_3]-g_eq_i_e[idx_3]) / tau_Te_Ti -(g_i[idx_3]-g_eq_i_n[idx_3]) / tau_Ti_Tn;
-                //const double C_Tn = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn -(g_n[idx_3]-g_eq_n_e[idx_3]) / tau_Te_Tn -(g_n[idx_3]-g_eq_n_i[idx_3]) / tau_Ti_Tn;
-                //g_temp_e[idx_3] = g_e[idx_3] + C_Te;
-                //g_temp_i[idx_3] = g_i[idx_3] + C_Ti;
-                //g_temp_n[idx_3] = g_n[idx_3] + C_Tn;
+                const size_t idx_2 = INDEX(x, y);
+                //const double DeltaE_e= Q*((f_eq_e[idx_3])/tau_e + (f_eq_e_i[idx_3])/tau_e_i + (f_eq_e_n[idx_3])/tau_e_n)*(ux_e[idx_2]*ux_e[idx_2]+uy_e[idx_2]*uy_e[idx_2]);
+                //const double DeltaE_i= Q*((f_eq_i[idx_3])/tau_i + (f_eq_i_e[idx_3])/tau_e_i + (f_eq_i_n[idx_3])/tau_i_n)*(ux_i[idx_2]*ux_i[idx_2]+uy_i[idx_2]*uy_i[idx_2]);
+                //const double DeltaE_n= Q*((f_eq_n[idx_3])/tau_n + (f_eq_n_e[idx_3])/tau_e_n + (f_eq_n_i[idx_3])/tau_i_n)*(ux_n[idx_2]*ux_n[idx_2]+uy_n[idx_2]*uy_n[idx_2]);
 
-                const double v2 = static_cast<double>(cx[i] * cx[i] + cy[i] * cy[i]);
-                double S_Te = (f_e[idx_3] - f_eq_e[idx_3])/tau_e + (f_e[idx_3] - f_eq_e_i[idx_3])/tau_e_i + (f_e[idx_3] - f_eq_e_n[idx_3])/tau_e_n;
-                double S_Ti = (f_i[idx_3] - f_eq_i[idx_3])/tau_i + (f_i[idx_3] - f_eq_i_e[idx_3])/tau_e_i + (f_i[idx_3] - f_eq_i_n[idx_3])/tau_i_n;
-                double S_Tn = (f_n[idx_3] - f_eq_n[idx_3])/tau_n + (f_n[idx_3] - f_eq_n_e[idx_3])/tau_e_n + (f_n[idx_3] - f_eq_n_i[idx_3])/tau_i_n;
+                //const double DeltaE_e= ((1.0/(tau_e*2*Q*f_eq_e[idx_3]))+(1.0/(tau_e_i*2*Q*f_eq_e_i[idx_3]))+(1.0/(tau_e_n*2*Q*f_eq_e_n[idx_3])))*(ux_e[idx_2]*ux_e[idx_2]+uy_e[idx_2]*uy_e[idx_2]);
+                //const double DeltaE_i= ((1.0/(tau_i*2*Q*f_eq_i[idx_3]))+(1.0/(tau_e_i*2*Q*f_eq_i_e[idx_3]))+(1.0/(tau_i_n*2*Q*f_eq_i_n[idx_3])))*(ux_i[idx_2]*ux_i[idx_2]+uy_i[idx_2]*uy_i[idx_2]);
+                //const double DeltaE_n= ((1.0/(tau_n*2*Q*f_eq_n[idx_3]))+(1.0/(tau_e_n*2*Q*f_eq_n_e[idx_3]))+(1.0/(tau_i_n*2*Q*f_eq_n_i[idx_3])))*(ux_n[idx_2]*ux_n[idx_2]+uy_n[idx_2]*uy_n[idx_2]);
 
-                double dissipated_e = 0.5 * v2 * m_e * S_Te;
-                double dissipated_i = 0.5 * v2 * m_i * S_Ti;
-                double dissipated_n = 0.5 * v2 * m_n * S_Tn;
+                const double term_ee=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e)*(1-1/tau_e)-2.0*(1.0-1.0/tau_e)*rho_e[idx_2]-Q*f_eq_e[idx_3]/tau_e)/(2.0*(2.0*(1.0-1.0/tau_e)+Q*f_eq_e[idx_3]/tau_e));
+                const double term_ei=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_e[idx_2]-Q*f_eq_e_i[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_e_i[idx_3]/tau_e_i));
+                const double term_en=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_e[idx_2]-Q*f_eq_e_n[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_e_n[idx_3]/tau_e_n));
 
-                g_temp_e[idx_3] = g_e[idx_3] + dissipated_e;
-                g_temp_i[idx_3] = g_i[idx_3] + dissipated_i;
-                g_temp_n[idx_3] = g_n[idx_3] + dissipated_n;
+                const double term_ii=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i)*(1-1/tau_i)-2.0*(1.0-1.0/tau_i)*rho_i[idx_2]-Q*f_eq_i[idx_3]/tau_i)/(2.0*(2.0*(1.0-1.0/tau_i)+Q*f_eq_i[idx_3]/tau_i));
+                const double term_ie=(2.0*rho_i[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_i[idx_2]-Q*f_eq_i_e[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_i_e[idx_3]/tau_e_i));
+                const double term_in=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_i[idx_2]-Q*f_eq_i_n[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_i_n[idx_3]/tau_i_n));
+
+                const double term_nn=(2.0*rho_n[idx_2]*(1.0-1.0/tau_n)*(1-1/tau_n)-2.0*(1.0-1.0/tau_n)*rho_n[idx_2]-Q*f_eq_n[idx_3]/tau_n)/(2.0*(2.0*(1.0-1.0/tau_n)+Q*f_eq_n[idx_3]/tau_n));
+                const double term_ne=(2.0*rho_n[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_n[idx_2]-Q*f_eq_n_e[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_n_e[idx_3]/tau_e_n));
+                const double term_ni=(2.0*rho_n[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_n[idx_2]-Q*f_eq_n_i[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_n_i[idx_3]/tau_i_n));
+
+                const double DeltaE_e= rho_e[idx_2]*(term_ee+ term_ei+term_en)*(ux_e[idx_2]*ux_e[idx_2]+uy_e[idx_2]*uy_e[idx_2]);
+                const double DeltaE_i= rho_i[idx_2]*(term_ii+ term_ie+term_in)*(ux_i[idx_2]*ux_i[idx_2]+uy_i[idx_2]*uy_i[idx_2]);
+                const double DeltaE_n= rho_n[idx_2]*(term_nn+ term_ne+term_ni)*(ux_n[idx_2]*ux_n[idx_2]+uy_n[idx_2]*uy_n[idx_2]);
+
+                const double DeltaT_e= - DeltaE_e/Kb;
+                const double DeltaT_i= - DeltaE_i/Kb;
+                const double DeltaT_n= - DeltaE_n/Kb;
+
+                const double C_Te = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_Te -(g_e[idx_3]-g_eq_e_i[idx_3]) / tau_Te_Ti -(g_e[idx_3]-g_eq_e_n[idx_3]) / tau_Te_Tn;
+                const double C_Ti = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_Ti -(g_i[idx_3]-g_eq_i_e[idx_3]) / tau_Te_Ti -(g_i[idx_3]-g_eq_i_n[idx_3]) / tau_Ti_Tn;
+                const double C_Tn = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_Tn -(g_n[idx_3]-g_eq_n_e[idx_3]) / tau_Te_Tn -(g_n[idx_3]-g_eq_n_i[idx_3]) / tau_Ti_Tn;
+
+                
+                g_temp_e[idx_3] = g_e[idx_3]+ C_Te + DeltaT_e;
+                g_temp_i[idx_3] = g_i[idx_3]+ C_Ti + DeltaT_i;
+                g_temp_n[idx_3] = g_n[idx_3]+ C_Tn + DeltaT_n;
+
                 
             }
         }
@@ -1320,7 +1389,8 @@ void LBmethod::Run_simulation() {
             auto min_Tn = std::min_element(T_n.begin(), T_n.end());
             double totmass = 0.0;
             double totkinenerg = 0.0;
-            double totthermenerg =0.0;
+            //double totthermenerg =0.0;
+            double totT =0.0;
             for(size_t x=0;x<NX;++x){
                 for(size_t y=0;y<NY;++y){
                     const size_t idx=INDEX(x,y);
@@ -1328,7 +1398,10 @@ void LBmethod::Run_simulation() {
                     totkinenerg+=0.5*rho_e[idx]*(ux_e[idx]*ux_e[idx]+uy_e[idx]*uy_e[idx])
                                 +0.5*rho_i[idx]*(ux_i[idx]*ux_i[idx]+uy_i[idx]*uy_i[idx])
                                 +0.5*rho_n[idx]*(ux_n[idx]*ux_n[idx]+uy_n[idx]*uy_n[idx]);
-                    totthermenerg+=T_e[idx]+T_i[idx]+T_n[idx];
+                    //totthermenerg += ((rho_e[idx] > 0.0 ? T_e[idx] / rho_e[idx] : 0.0)
+                    //            + (rho_i[idx] > 0.0 ? T_i[idx] / rho_i[idx] : 0.0)
+                    //            + (rho_n[idx] > 0.0 ? T_n[idx] / rho_n[idx] : 0.0));
+                    totT += ( T_e[idx] + T_i[idx] + T_n[idx]);
 
                 }
             }
@@ -1350,13 +1423,13 @@ void LBmethod::Run_simulation() {
             std::cout <<"max T_n= "<<*max_Tn<<", min T_n= "<<*min_Tn<<std::endl;
             std::cout <<"max rho_q (latt)= "<<*max_rho<<", rho_q (latt)= "<<*min_rho<<std::endl;
             std::cout <<"Parameters to check:"<<std::endl;
-            std::cout <<"totmass = "<<totmass<<" , totkinenerg= "<<totkinenerg<<" , totthermenerg= "<<totthermenerg<<std::endl;
+            std::cout <<"totmass = "<<totmass<<" , totkinenerg= "<<totkinenerg<<" , totthermenerg= "<<totT<<std::endl;
             std::cout <<std::endl;
         }
         
         computeEquilibrium();
         if(NX<11) DumpGridStateReadable(t, "ComputeEquilibrium");
-        ThermalCollisions();
+        ThermalCollisions(); //before the collision term-> we need the old f
         Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
         if(NX<11) DumpGridStateReadable(t, "Collisions");
         Streaming(); // f(x,y,t+1)=f(x-cx,y-cy,t)
@@ -2054,6 +2127,39 @@ void LBmethod::DumpGridStateReadable(size_t step, const std::string& stage) {
         }
         debug_file << "\n";
     }
+    // 8) Te
+    debug_file << "Te\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = T_e[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 8) Ti
+    debug_file << "Ti\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = T_i[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
+    // 8) Tn
+    debug_file << "Tn\n";
+    for (int jj = static_cast<int>(NY) - 1; jj >= 0; --jj) {
+        for (size_t ii = 0; ii < NX; ++ii) {
+            size_t idx = INDEX(ii, jj);
+            double v = T_n[idx];
+            debug_file << std::scientific << std::setprecision(precision) << v;
+            if (ii + 1 < NX) debug_file << ",";
+        }
+        debug_file << "\n";
+    }
 
     // Funzione lambda per stampare le distribuzioni f per una specie
     auto dump_f = [&](const std::string& label,
@@ -2095,29 +2201,35 @@ void LBmethod::DumpGridStateReadable(size_t step, const std::string& stage) {
     };
 
     // 8) f_e
-    dump_f("f_e", f_e);
+    //dump_f("f_e", f_e);
     // 9) f_i
-    dump_f("f_i", f_i);
+    //dump_f("f_i", f_i);
     // 9) f_n
-    dump_f("f_n", f_n);
+    //dump_f("f_n", f_n);
     // 10) f_eq_e
-    dump_f("f_eq_e", f_eq_e);
+    //dump_f("f_eq_e", f_eq_e);
     // 11) f_eq_i
-    dump_f("f_eq_i", f_eq_i);
+    //dump_f("f_eq_i", f_eq_i);
     // 10) f_eq_n
-    dump_f("f_eq_n", f_eq_n);
+    //dump_f("f_eq_n", f_eq_n);
     // 11) f_eq_e_i
-    dump_f("f_eq_e_i", f_eq_e_i);
+    //dump_f("f_eq_e_i", f_eq_e_i);
     // 11) f_eq_i_e
-    dump_f("f_eq_i_e", f_eq_i_e);
+    //dump_f("f_eq_i_e", f_eq_i_e);
     // 11) f_eq_e_n
-    dump_f("f_eq_e_n", f_eq_e_n);
+    //dump_f("f_eq_e_n", f_eq_e_n);
     // 11) f_eq_n_e
-    dump_f("f_eq_n_e", f_eq_n_e);
+    //dump_f("f_eq_n_e", f_eq_n_e);
     // 11) f_eq_i_n
-    dump_f("f_eq_i_n", f_eq_i_n);
+    //dump_f("f_eq_i_n", f_eq_i_n);
     // 11) f_eq_n_i
-    dump_f("f_eq_n_i", f_eq_n_i);
+    //dump_f("f_eq_n_i", f_eq_n_i);
+    // 8) g_e
+    dump_f("g_e", g_e);
+    // 8) g_i
+    dump_f("g_i", g_i);
+    // 8) g_n
+    dump_f("g_n", g_n);
 
 
     // Riga vuota come separatore
