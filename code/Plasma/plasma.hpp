@@ -159,14 +159,20 @@ private:
     // Sound‐speeds in lattice units from D2Q9 c_s^2=1/3
     const double cs2 = kB_SI * T0_SI / M0_SI * t0_SI * t0_SI / (L0_SI * L0_SI);
     
+
+    const double Kb = kB_SI* (t0_SI * t0_SI * T0_SI)/(L0_SI * L0_SI * M0_SI);
+
     //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
     //const double tau_e=nu_e/cs2+0.5;
     // Relaxation times (to be set in constructor)
-    const double tau_e = 400.0, tau_i = 300.0, tau_n = 1.0,
-                 tau_e_i = 200.0, tau_e_n = 6.0,  tau_i_n = 5.0;
+    const double tau_e = 5.0, tau_i = 3.0, tau_n = 1.0,
+                 tau_e_i = 6.0, tau_e_n = 4.0,  tau_i_n = 2.0;
 
-    const double tau_Te = 400.0 , tau_Ti = 300.0, tau_Tn = 1.0,
-                 tau_Te_Ti = 200.0,  tau_Te_Tn = 6.0, tau_Ti_Tn = 5.0; 
+    const double tau_Te = 5.0, tau_Ti = 3.0, tau_Tn = 1.0,
+                 tau_Te_Ti = 6.0,  tau_Te_Tn = 4.0, tau_Ti_Tn = 2.0; 
+    
+    const double mu_e=1, mu_i=1, mu_n=1; //dynamic viscosity
+    const double cv_e=1, cv_i=1, cv_n=1; // specific heat 
 
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
@@ -356,9 +362,9 @@ private:
     static constexpr double UI_MAG_MAX = 1e-7;
 
     // --- Temperature visualization ranges
-    static constexpr double TEMP_E_MIN = 0.01;
-    static constexpr double TEMP_E_MAX = 1.0;
-    static constexpr double TEMP_I_MIN = 0.001;
+    static constexpr double TEMP_E_MIN = 1e-6;
+    static constexpr double TEMP_E_MAX = 1;
+    static constexpr double TEMP_I_MIN = 1e-6;
     static constexpr double TEMP_I_MAX = 0.5;
 
     
