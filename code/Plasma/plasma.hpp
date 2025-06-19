@@ -1,8 +1,10 @@
-#ifndef LBM_H
-#define LBM_H
+#pragma once
 
-#include "streaming.hpp"
 #include "utils.hpp"
+#include "streaming.hpp"
+#include "collisions.hpp"
+#include "poisson.hpp"
+#include "visualize.hpp"
 
 
 #include <vector>
@@ -23,10 +25,7 @@
 #include <fstream>
 #include <sstream>
 
-//--------------------------------------------------------------------------------
-// Enumerations for choosing Poisson solver and Streaming/BC type
-//--------------------------------------------------------------------------------
-enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4};
+
 //--------------------------------------------------------------------------------
 // LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
 // All “physical” parameters are passed in SI units to the constructor, and inside
@@ -62,7 +61,7 @@ public:
              const double    T_n_SI_init,
              const double    n_e_SI_init,
              const double    n_n_SI_init,
-             const PoissonType poisson_type,
+             const poisson::PoissonType poisson_type,
              const streaming::BCType      bc_type,
              const double    omega_sor);
 
@@ -86,7 +85,7 @@ private:
     const double    T_n_SI_init;
     const double    n_e_SI_init;
     const double    n_n_SI_init;
-    const PoissonType  poisson_type; // which Poisson solver to run
+    const poisson::PoissonType  poisson_type; // which Poisson solver to run
     const streaming::BCType       bc_type;      // which streaming/BC we use
     const double       omega_sor;    // over‐relaxation factor for SOR
 
@@ -130,11 +129,6 @@ private:
     //             tau_e_i=nu_e_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_e_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5;
    
     const double Kb = kB_SI* (t0_SI * t0_SI * T0_SI)/(L0_SI * L0_SI * M0_SI);
-
-    // Otherwise we have to set values for tau based on previous knowledge
-    const double tau_e = 5.0, tau_i = 3.0, tau_n = 1.0,
-                 tau_e_i = 6.0, tau_e_n = 4.0,  tau_i_n = 2.0;
-    //Thermal tau are considered equal to the f ones
     
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
@@ -164,8 +158,6 @@ private:
     static const std::array<int, Q> cx; // = {0,1,0,-1,0,1,-1,-1,1};
     static const std::array<int, Q> cy; // = {0,0,1,0,-1,1,1,-1,-1};
     static const std::array<double, Q> w; // weights
-
-    static const std::array<int, Q> opp;  // opposite‐direction map for bounce‐back
 
     //──────────────────────────────────────────────────────────────────────────────
     // 5) Per‐Node (“lattice‐unit”) Fields
@@ -249,27 +241,12 @@ private:
     // (a) Initialize all fields (set f = f_eq at t=0, zero φ, set E=Ex_latt_init)
     void Initialize();
 
-    // (b) Compute equilibrium f_eq for given (ρ, u) and c_s^2
+    // (b) Compute equilibrium f_eq
     void ComputeEquilibrium();
     
-    // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F
+    // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F  T=Σ_i g_i
     void UpdateMacro();
 
-    // (e) Collision step (BGK + forcing) for both species
-    void Collisions();
-    
-    void ThermalCollisions();
-
-
-    // (g) Poisson solvers:
-    void SolvePoisson();
-    void SolvePoisson_GS();  // Gauss–Seidel
-    void SolvePoisson_GS_Periodic();
-    void SolvePoisson_SOR(); // Successive Over‑Relaxation
-    void SolvePoisson_SOR_Periodic();
-    void SolvePoisson_fft();
-    void SolvePoisson_9point();
-    void SolvePoisson_9point_Periodic();
 
     // Visualization function to see the movement in OpenCV.
     void VisualizationDensity();
@@ -277,43 +254,27 @@ private:
     void VisualizationTemperature();
 
     
-    // Functions to plot grahps of values
-    void InitTimeSeries();
-    void RecordTimeSeriesStep(size_t t);
-    void FinalizeTimeSeriesPlots();
-
-    // the 9 sample points
+    // Punti di campionamento
     std::vector<std::pair<size_t,size_t>> sample_points;
 
-    // a shared time‐axis
-    std::vector<double> ts;
+    // File streams per CSV
+    std::ofstream file_ux_e, file_uy_e, file_ue_mag;
+    std::ofstream file_ux_i, file_uy_i, file_ui_mag;
+    std::ofstream file_ux_n, file_uy_n, file_un_mag;
+    std::ofstream file_T_e, file_T_i, file_T_n;
+    std::ofstream file_rho_e, file_rho_i, file_rho_n, file_rho_q;
+    std::ofstream file_Ex, file_Ey, file_E_mag;
+    
+    // Funzioni per gestione CSV e plotting
+    void InitCSVTimeSeries();
+    void RecordCSVTimeStep(size_t t);
+    void CloseCSVAndPlot();  // Chiude file e genera i PNG
 
-    // for each quantity, a history[time][point]
-    std::vector<std::vector<double>> hist_ux_e,
-                                   hist_uy_e,
-                                   hist_ue_mag,
-                                   hist_ux_i,
-                                   hist_uy_i,
-                                   hist_ui_mag,
-                                   hist_ux_n,
-                                   hist_uy_n,
-                                   hist_un_mag,
-                                   hist_T_e,
-                                   hist_T_i,
-                                   hist_T_n,
-                                   hist_rho_e,
-                                   hist_rho_i,
-                                   hist_rho_n,
-                                   hist_rho_q,
-                                   hist_Ex,
-                                   hist_Ey,
-                                   hist_E_mag;
 
     // helper to plot one set of histories
-    void PlotTimeSeriesDirect(const std::string &png_filename,
-                            const std::string &title,
-                            const std::vector<std::string> &legends,
-                            const std::vector<std::vector<double>> &data);
+    void PlotCSVWithOpenCV(const std::string& csv_filename,
+                           const std::string& png_filename,
+                           const std::string& title);
 
     cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
     // Global‐range trackers for visualization:
@@ -348,5 +309,3 @@ private:
 
     
 };
-
-#endif // LBMETHOD_H
