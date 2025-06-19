@@ -1,5 +1,4 @@
-#ifndef UTILS_HPP
-#define UTILS_HPP
+#pragma once
 
 constexpr int Q = 9;
 
@@ -11,4 +10,3 @@ constexpr int Q = 9;
         return x + NX * y;
     }
 
-#endif // UTILS_HPP
