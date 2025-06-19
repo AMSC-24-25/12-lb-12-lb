@@ -32,14 +32,14 @@ int main(int argc, char* argv[]) {
     const double T_n_SI_init = 300;
 
     // (g) External E‐field in SI [V/m]:
-    const double Ex_SI = 1.0;     // External electric field along x [V/m]
+    const double Ex_SI = 100.0;     // External electric field along x [V/m]
     const double Ey_SI = 0.0;     // External electric field along y [V/m]
 
     // (h) Choose Poisson solver and BC type:
-    const PoissonType poisson_solver = PoissonType::FFT;
+    const poisson::PoissonType poisson_solver = poisson::PoissonType::FFT;
     // Options:
     // • NONE
-    // • GAUSS_SEIDEL
+    // • GS
     // • SOR
     // • FFT
     // • NPS
