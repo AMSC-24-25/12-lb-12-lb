@@ -204,39 +204,6 @@ private:
     //──────────────────────────────────────────────────────────────────────────────
     // 6) Private Methods
     //──────────────────────────────────────────────────────────────────────────────
-    
-
-
-    // Helper: create legend panel (JET colormap)
-    cv::Mat makeColorLegend(double min_val, double max_val, int height, int width = 40, int text_area = 60, int border = 10) {
-        cv::Mat gray(height, 1, CV_8U);
-        for (int i = 0; i < height; ++i)
-            gray.at<uchar>(i, 0) = 255 - (i * 255 / (height - 1));
-        cv::Mat colorbar;
-        cv::applyColorMap(gray, colorbar, cv::COLORMAP_JET);
-        cv::resize(colorbar, colorbar, cv::Size(width, height), 0, 0, cv::INTER_NEAREST);
-
-        cv::Mat panel(height + 2 * border, width + text_area, CV_8UC3, cv::Scalar(255, 255, 255));
-        colorbar.copyTo(panel(cv::Rect(border, border, width, height)));
-
-        auto putVal = [&](const std::string &txt, int y) {
-            cv::putText(panel, txt,
-                        cv::Point(border + width + 5, y),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5,
-                        cv::Scalar(0, 0, 0), 1);
-        };
-
-        std::ostringstream oss_max, oss_mid, oss_min;
-        oss_max << std::fixed << std::setprecision(2) << max_val;
-        oss_mid << std::fixed << std::setprecision(2) << 0.5 * (min_val + max_val);
-        oss_min << std::fixed << std::setprecision(2) << min_val;
-
-        putVal(oss_max.str(), border + 10);
-        putVal(oss_mid.str(), border + height / 2);
-        putVal(oss_min.str(), border + height - 5);
-
-        return panel;
-    }
 
     // (a) Initialize all fields (set f = f_eq at t=0, zero φ, set E=Ex_latt_init)
     void Initialize();
@@ -246,66 +213,6 @@ private:
     
     // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F  T=Σ_i g_i
     void UpdateMacro();
-
-
-    // Visualization function to see the movement in OpenCV.
-    void VisualizationDensity();
-    void VisualizationVelocity();
-    void VisualizationTemperature();
-
-    
-    // Punti di campionamento
-    std::vector<std::pair<size_t,size_t>> sample_points;
-
-    // File streams per CSV
-    std::ofstream file_ux_e, file_uy_e, file_ue_mag;
-    std::ofstream file_ux_i, file_uy_i, file_ui_mag;
-    std::ofstream file_ux_n, file_uy_n, file_un_mag;
-    std::ofstream file_T_e, file_T_i, file_T_n;
-    std::ofstream file_rho_e, file_rho_i, file_rho_n, file_rho_q;
-    std::ofstream file_Ex, file_Ey, file_E_mag;
-    
-    // Funzioni per gestione CSV e plotting
-    void InitCSVTimeSeries();
-    void RecordCSVTimeStep(size_t t);
-    void CloseCSVAndPlot();  // Chiude file e genera i PNG
-
-
-    // helper to plot one set of histories
-    void PlotCSVWithOpenCV(const std::string& csv_filename,
-                           const std::string& png_filename,
-                           const std::string& title);
-
-    cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
-    // Global‐range trackers for visualization:
-    // --- Density and charge visualization ranges
-    static constexpr double DENSITY_E_MIN = 0.0;
-    static constexpr double DENSITY_E_MAX = 1.0;
-    static constexpr double DENSITY_I_MIN = 0.0;
-    static constexpr double DENSITY_I_MAX = 1822.0;
-    static constexpr double CHARGE_MIN  = 0.5;
-    static constexpr double CHARGE_MAX  = 1.5;
-
-    // --- Velocity visualization ranges
-    static constexpr double UX_E_MIN = -1e-7;
-    static constexpr double UX_E_MAX =  1e-7;
-    static constexpr double UY_E_MIN = -1e-7;
-    static constexpr double UY_E_MAX =  1e-7;
-    static constexpr double UE_MAG_MIN = 0.0;
-    static constexpr double UE_MAG_MAX = 1e-7;
-
-    static constexpr double UX_I_MIN = -1e-7;
-    static constexpr double UX_I_MAX =  1e-7;
-    static constexpr double UY_I_MIN = -1e-7;
-    static constexpr double UY_I_MAX =  1e-7;
-    static constexpr double UI_MAG_MIN = 0.0;
-    static constexpr double UI_MAG_MAX = 1e-7;
-
-    // --- Temperature visualization ranges
-    static constexpr double TEMP_E_MIN = 1e-6;
-    static constexpr double TEMP_E_MAX = 1;
-    static constexpr double TEMP_I_MIN = 1e-6;
-    static constexpr double TEMP_I_MAX = 0.5;
 
     
 };
