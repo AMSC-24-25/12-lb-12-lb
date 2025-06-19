@@ -12,17 +12,15 @@ int main(int argc, char* argv[]) {
     //────────────────────────────────────────────────────────────────────────────
 
     // (b) Grid resolution:
-    const size_t NX = 100;       // # nodes in x
-    const size_t NY = 100;       // # nodes in y
+    const int NX = 200;       // # nodes in x
+    const int NY = 200;       // # nodes in y
 
     // (c) Number of time‐steps:
-    const size_t NSTEPS = 50; // total number of time steps
+    const int NSTEPS = 100; // total number of time steps
 
     // (d) Ion parameters:
     const size_t Z_ion = 1;                   // atomic number
     const size_t A_ion = 1;                   // mass number
-    // e.g. H⁺ has Z_ion = 1 and A_ion = 1
-    const double r_ion = 2.0e-10;             // ion radius [m]
     
     // (e) Physical denisty:
     const double n_e_SI_init = 1e11;  // Initial physical density [m⁻³]
@@ -34,7 +32,7 @@ int main(int argc, char* argv[]) {
     const double T_n_SI_init = 300;
 
     // (g) External E‐field in SI [V/m]:
-    const double Ex_SI = 1e-2;     // External electric field along x [V/m]
+    const double Ex_SI = 1.0;     // External electric field along x [V/m]
     const double Ey_SI = 0.0;     // External electric field along y [V/m]
 
     // (h) Choose Poisson solver and BC type:
@@ -45,11 +43,10 @@ int main(int argc, char* argv[]) {
     // • SOR
     // • FFT
     // • NPS
-    // • MG
-    const BCType      bc_mode        = BCType::PERIODIC;
+    const streaming::BCType      bc_mode        = streaming::BCType::Periodic;
     // Options:
-    // • PERIODIC
-    // • BOUNCE_BACK
+    // • Periodic
+    // • BounceBack
     const double      omega_sor      = 1.8;    // only used if SOR is selected
 
     // Define clock to evaluate time intervals
@@ -61,7 +58,7 @@ int main(int argc, char* argv[]) {
     LBmethod lb(NSTEPS,
                 NX, NY,
                 n_cores,
-                Z_ion, A_ion, r_ion,
+                Z_ion, A_ion,
                 Ex_SI, Ey_SI,
                 T_e_SI_init, T_i_SI_init, T_n_SI_init,
                 n_e_SI_init, n_n_SI_init,
