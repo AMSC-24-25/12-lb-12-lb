@@ -5,9 +5,9 @@
 
 export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
 
-# Check for invalid input
+# Usage check
 if [ "$#" -gt 1 ]; then
-  echo "Usage: ./compile_and_run_plasma.sh [number_of_cores]"
+  echo "Usage: $0 [number_of_cores]"
   exit 1
 fi
 
@@ -21,17 +21,29 @@ fi
 # Print the number of cores being used
 echo "Running with $NUM_CORES cores"
 
-# Compile the program
+# Source files
+SRCS=(
+  main_plasma.cpp
+  plasma.cpp
+  streaming.cpp
+)
+
+# Compiler and flags
+CXX=g++-10
+OPT_FLAGS="-O3 -Wall -Wextra -march=native -std=c++20 -fopenmp"
+PKG_FLAGS="$(pkg-config --cflags --libs opencv4)"
+EXTRA_LIBS="-lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -lfftw3 -lm"
+
+# Build
 echo "Compiling the program..."
-g++-10 -O3 -Wall -Wextra -march=native -std=c++20 -fopenmp \
-$(pkg-config --cflags --libs opencv4) -o simulation_exec \
-main_plasma.cpp plasma.cpp -lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -lfftw3 -lm
+$CXX $OPT_FLAGS $PKG_FLAGS "${SRCS[@]}" -o simulation_exec $EXTRA_LIBS
+
 
 if [ $? -ne 0 ]; then
   echo "Compilation failed. Exiting."
   exit 1
 fi
 
-# Run the program
-echo "Running the simulation..."
+# Run
+echo "Compilation successful. Launching simulation..."
 ./simulation_exec $NUM_CORES
