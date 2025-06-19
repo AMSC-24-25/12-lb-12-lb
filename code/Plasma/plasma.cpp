@@ -18,8 +18,7 @@ const std::array<double, Q> LBmethod::w = { {
     1.0/9.0, 1.0/9.0, 1.0/9.0, 1.0/9.0,
     1.0/36.0,1.0/36.0,1.0/36.0,1.0/36.0
 } };
-// Opposite directions for bounce‐back:
-const std::array<int, Q> LBmethod::opp = { {0,3,4,1,2,7,8,5,6} };
+
 
 //──────────────────────────────────────────────────────────────────────────────
 //  Constructor: everything passed in SI → convert to lattice units
@@ -37,7 +36,7 @@ LBmethod::LBmethod(const int    _NSTEPS,
                    const double    _T_n_SI_init,
                    const double    _n_e_SI_init,
                    const double    _n_n_SI_init,
-                   const PoissonType _poisson_type,
+                   const poisson::PoissonType _poisson_type,
                    const streaming::BCType      _bc_type,
                    const double    _omega_sor)
     : NSTEPS      (_NSTEPS),
@@ -146,10 +145,10 @@ LBmethod::LBmethod(const int    _NSTEPS,
 void LBmethod::Initialize() {
     // Initialize f=f_eq=weight at (ρ=1, u=0)
     #pragma omp parallel for collapse(3) schedule(static)
-    for (size_t x = 0; x < NX; ++x) {
-        for(size_t y = 0; y < NY; ++y){
-            for (size_t i=0;i<Q;++i){
-                const size_t idx_3 = INDEX(x, y, i,NX,Q);
+    for (int x = 0; x < NX; ++x) {
+        for(int y = 0; y < NY; ++y){
+            for (int i=0;i<Q;++i){
+                const int idx_3 = INDEX(x, y, i,NX,Q);
 
                 if (x<(3*NX/4) && x>(NX/4) && y<(3*NY/4) && y>(1*NY/4)){
                     f_e[idx_3] = w[i] * rho_e_init; // Equilibrium function for electrons
@@ -169,9 +168,9 @@ void LBmethod::Initialize() {
 void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe can be used as a function
     // Compute the equilibrium distribution function f_eq
     #pragma omp parallel for collapse(2) schedule(static)
-        for (size_t x = 0; x < NX; ++x) {
-            for (size_t y = 0; y < NY; ++y) {
-                const size_t idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
+        for (int x = 0; x < NX; ++x) {
+            for (int y = 0; y < NY; ++y) {
+                const int idx = INDEX(x, y, NX); // Get 1D index for 2D point (x, y)
                 const double u2_e = ux_e[idx] * ux_e[idx] + uy_e[idx] * uy_e[idx]; // Square of the speed magnitude
                 const double u2_i = ux_i[idx] * ux_i[idx] + uy_i[idx] * uy_i[idx]; 
                 const double u2_n = ux_n[idx] * ux_n[idx] + uy_n[idx] * uy_n[idx]; 
@@ -182,8 +181,8 @@ void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe 
                 const double den_i = rho_i[idx]; // Ion density
                 const double den_n = rho_n[idx]; // Neutrals density
                 
-                for (size_t i = 0; i < Q; ++i) {
-                    const size_t idx_3=INDEX(x, y, i,NX,Q);
+                for (int i = 0; i < Q; ++i) {
+                    const int idx_3=INDEX(x, y, i,NX,Q);
                     const double cu_e = cx[i]*ux_e[idx] +cy[i]*uy_e[idx]; // Dot product (c_i · u)
                     const double cu_i = cx[i]*ux_i[idx] +cy[i]*uy_i[idx];
                     const double cu_n = cx[i]*ux_n[idx] +cy[i]*uy_n[idx];
@@ -332,9 +331,9 @@ void LBmethod::UpdateMacro() {
     double T_loc_n = 0.0;
 
     #pragma omp parallel for collapse(2) private(rho_loc_e, ux_loc_e, uy_loc_e, T_loc_e, rho_loc_i, ux_loc_i, uy_loc_i, T_loc_i, rho_loc_n, ux_loc_n, uy_loc_n, T_loc_n)
-        for (size_t x=0; x<NX; ++x){
-            for (size_t y = 0; y < NY; ++y) {
-                const size_t idx = INDEX(x, y, NX);
+        for (int x=0; x<NX; ++x){
+            for (int y = 0; y < NY; ++y) {
+                const int idx = INDEX(x, y, NX);
                 rho_loc_e = 0.0;
                 ux_loc_e = 0.0;
                 uy_loc_e = 0.0;
@@ -350,8 +349,8 @@ void LBmethod::UpdateMacro() {
                 uy_loc_n = 0.0;
                 T_loc_n = 0.0;
 
-                for (size_t i = 0; i < Q; ++i) {
-                    const size_t idx_3 = INDEX(x, y, i,NX,Q);
+                for (int i = 0; i < Q; ++i) {
+                    const int idx_3 = INDEX(x, y, i,NX,Q);
                     const double fi_e=f_e[idx_3];
                     rho_loc_e += fi_e;
                     ux_loc_e += fi_e * cx[i];
@@ -379,11 +378,11 @@ void LBmethod::UpdateMacro() {
                 } else{
                     rho_e[idx] = rho_loc_e;
                     if(ux_loc_e==rho_loc_e || ux_loc_e==-rho_loc_e)
-                        ux_e[idx]=0.01*cs2;
+                        ux_e[idx]=0.0;
                     else
                         ux_e[idx] = ux_loc_e / rho_loc_e;
                     if(uy_loc_e==rho_loc_e || uy_loc_e==-rho_loc_e)
-                        uy_e[idx]=0.01*cs2;
+                        uy_e[idx]=0.0;
                     else
                         uy_e[idx] = uy_loc_e / rho_loc_e;
                     
@@ -399,11 +398,11 @@ void LBmethod::UpdateMacro() {
                 }else {
                     rho_i[idx] = rho_loc_i;
                     if(ux_loc_i==rho_loc_i || ux_loc_i==-rho_loc_i)
-                        ux_i[idx]=0.00001*cs2;
+                        ux_i[idx]=0.0;
                     else
                         ux_i[idx] = ux_loc_i / rho_loc_i;
                     if(uy_loc_i==rho_loc_i || uy_loc_i==-rho_loc_i)
-                        uy_i[idx]=0.00001*cs2;
+                        uy_i[idx]=0.0;
                     else
                         uy_i[idx] = uy_loc_i / rho_loc_i;
 
@@ -455,1272 +454,75 @@ void LBmethod::UpdateMacro() {
             }
         }
 }
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson dispatcher:
-//  - 5-point stencil: \nabla^2 φ = -ρ_q,  φ_new = 1/4(φ_E + φ_W + φ_N + φ_S + RHS)
-//  - SOR: φ = (1-ω)φ_old + ω φ_GS
-//  - 9-point stencil: φ_new = [4*(orthogonal neighbors) + (diagonals) + 6*RHS] / 20
-//  - FFT: use discrete sine transform in Fourier space
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson() {
-    // Dispatcher for Poisson solvers
-    if (poisson_type == PoissonType::GAUSS_SEIDEL) {
-        if (bc_type == streaming::BCType::Periodic) SolvePoisson_GS_Periodic();
-        else SolvePoisson_GS();
-    } else if (poisson_type == PoissonType::SOR) {
-        if (bc_type == streaming::BCType::Periodic) SolvePoisson_SOR_Periodic();
-        else SolvePoisson_SOR();
-    } else if (poisson_type == PoissonType::FFT && bc_type == streaming::BCType::Periodic) {
-        SolvePoisson_fft();
-    } else if (poisson_type == PoissonType::NPS) {
-        if (bc_type == streaming::BCType::Periodic) SolvePoisson_9point_Periodic();
-        else SolvePoisson_9point();
-    }
-}
-
-    
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: Gauss–Seidel with Dirichlet φ=0 on boundary.
-//    We solve  ∇² φ = − ρ_q_phys / ε₀,  in lattice units.
-//    Our RHS in “lattice‐Land” is:  RHS_latt = − ρ_q_latt.
-//    Then φ_new[i,j] = ¼ [ φ[i+1,j] + φ[i−1,j] + φ[i,j+1] + φ[i,j−1] − RHS_latt[i,j] ].
-//
-//  After convergence, we reconstruct E with centered differences:
-//    E_x = −(φ[i+1,j] − φ[i−1,j]) / (2), etc.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_GS() {
-    // Parameters for the Gauss–Seidel solver
-    const size_t maxIter = 5000;     // maximum number of iterations
-    const double tol    = 1e-8;      // convergence tolerance
-
-    // Red–Black Gauss–Seidel iteration for parallelism:
-    // we split the grid into two interleaved sets ("red" and "black")
-    // so each set can be updated in parallel without data races.
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // Update "red" points: (i+j) even
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 1; j < NY - 1; ++j) {
-            for (size_t i = 1; i < NX - 1; ++i) {
-                if (((i + j) & 1) == 0) {
-                    const size_t idx = INDEX(i, j, NX);
-                    // sum of four neighbors
-                    const double nb = phi[INDEX(i+1, j, NX)]
-                              + phi[INDEX(i-1, j, NX)]
-                              + phi[INDEX(i, j+1, NX)]
-                              + phi[INDEX(i, j-1, NX)];
-                    const double newPhi = 0.25 * (nb + rho_q[idx]);
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx] = newPhi;
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // Update "black" points: (i+j) odd
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 1; j < NY - 1; ++j) {
-            for (size_t i = 1; i < NX - 1; ++i) {
-                if (((i + j) & 1) == 1) {
-                    const size_t idx = INDEX(i, j,NX);
-                    const double nb = phi[INDEX(i+1, j,NX)]
-                              + phi[INDEX(i-1, j,NX)]
-                              + phi[INDEX(i, j+1,NX)]
-                              + phi[INDEX(i, j-1,NX)];
-                    const double newPhi = 0.25 * (nb + rho_q[idx]);
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx] = newPhi;
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // Check for convergence
-        if (maxErr < tol) {
-            // early exit if solution has converged
-            break;
-        }
-    }
-
-    // Compute electric field E = -∇φ using central differences
-    // Only interior points; boundaries will be set by Neumann BC below
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 1; j < NY - 1; ++j) {
-        for (size_t i = 1; i < NX - 1; ++i) {
-            const size_t idx = INDEX(i, j,NX);
-            Ex[idx] = -0.5 * (phi[INDEX(i+1, j,NX)] - phi[INDEX(i-1, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, j+1,NX)] - phi[INDEX(i, j-1,NX)]);
-        }
-    }
-
-    // Zero-Neumann boundary conditions (zero normal derivative):
-    // copy the adjacent interior field value to the boundary cell.
-
-    // Top and bottom boundaries
-    #pragma omp parallel for
-    for (size_t i = 0; i < NX; ++i) {
-        Ex[INDEX(i, 0,NX)]      = Ex[INDEX(i, 1,NX)];
-        Ey[INDEX(i, 0,NX)]      = Ey[INDEX(i, 1,NX)];
-        Ex[INDEX(i, NY-1,NX)]   = Ex[INDEX(i, NY-2,NX)];
-        Ey[INDEX(i, NY-1,NX)]   = Ey[INDEX(i, NY-2,NX)];
-    }
-
-    // Left and right boundaries
-    #pragma omp parallel for
-    for (size_t j = 0; j < NY; ++j) {
-        Ex[INDEX(0, j,NX)]      = Ex[INDEX(1, j,NX)];
-        Ey[INDEX(0, j,NX)]      = Ey[INDEX(1, j,NX)];
-        Ex[INDEX(NX-1, j,NX)]   = Ex[INDEX(NX-2, j,NX)];
-        Ey[INDEX(NX-1, j,NX)]   = Ey[INDEX(NX-2, j,NX)];
-    }
-}
-
-
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: GS when BC are periodic for consistency.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_GS_Periodic() {
-    const size_t maxIter = 5000;       // max iterations
-    const double tol    = 1e-8;        // convergence tolerance
-
-    // Precompute strides for modulo arithmetic if you want, 
-    // but here we compute them on the fly for clarity.
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // === RED sweep (i+j even) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 0; j < NY; ++j) {
-            for (size_t i = 0; i < NX; ++i) {
-                if (((i + j) & 1) == 0) {
-                    // periodic neighbors
-                    const size_t ip = (i + 1) % NX;
-                    const size_t im = (i + NX - 1) % NX;
-                    const size_t jp = (j + 1) % NY;
-                    const size_t jm = (j + NY - 1) % NY;
-
-                    const size_t idx = INDEX(i, j,NX);
-                    const double sumNb =
-                        phi[INDEX(ip, j,NX)] +
-                        phi[INDEX(im, j,NX)] +
-                        phi[INDEX(i, jp,NX)] +
-                        phi[INDEX(i, jm,NX)];
-
-                    const double newPhi = 0.25 * (sumNb + rho_q[idx]);
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx]      = newPhi;
-
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // === BLACK sweep (i+j odd) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 0; j < NY; ++j) {
-            for (size_t i = 0; i < NX; ++i) {
-                if (((i + j) & 1) == 1) {
-                    // periodic neighbors
-                    const size_t ip = (i + 1) % NX;
-                    const size_t im = (i + NX - 1) % NX;
-                    const size_t jp = (j + 1) % NY;
-                    const size_t jm = (j + NY - 1) % NY;
-
-                    const size_t idx = INDEX(i, j,NX);
-                    const double sumNb =
-                        phi[INDEX(ip, j,NX)] +
-                        phi[INDEX(im, j,NX)] +
-                        phi[INDEX(i, jp,NX)] +
-                        phi[INDEX(i, jm,NX)];
-
-                    const double newPhi = 0.25 * (sumNb + rho_q[idx]);
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx]      = newPhi;
-
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // Convergence check
-        if (maxErr < tol) {
-            break;
-        }
-    }
-
-    // Compute periodic E field (can be done in one parallel pass)
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 0; j < NY; ++j) {
-        for (size_t i = 0; i < NX; ++i) {
-            const size_t ip = (i + 1) % NX;
-            const size_t im = (i + NX - 1) % NX;
-            const size_t jp = (j + 1) % NY;
-            const size_t jm = (j + NY - 1) % NY;
-            const size_t idx = INDEX(i, j,NX);
-
-            Ex[idx] = -0.5 * (phi[INDEX(ip, j,NX)] - phi[INDEX(im, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, jp,NX)] - phi[INDEX(i, jm,NX)]);
-        }
-    }
-}
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: SOR (over‐relaxed Gauss–Seidel).  
-//  Identical 5‐point stencil as GS, but φ_new = (1−ω) φ_old + ω φ_GS.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_SOR() {
-    // Parameters for SOR solver
-    const size_t maxIter       = 5000;    // maximum iterations
-    const double tol           = 1e-8;    // convergence tolerance
-    const double omega         = omega_sor;   // over‐relaxation factor
-
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // === RED sweep (i+j even) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 1; j < NY - 1; ++j) {
-            for (size_t i = 1; i < NX - 1; ++i) {
-                if (((i + j) & 1) == 0) {
-                    const size_t idx = INDEX(i, j,NX);
-                    const double oldPhi = phi[idx];
-
-                    // sum of neighbors (Gauss–Seidel stencil)
-                    const double nb = phi[INDEX(i+1, j,NX)]
-                              + phi[INDEX(i-1, j,NX)]
-                              + phi[INDEX(i, j+1,NX)]
-                              + phi[INDEX(i, j-1,NX)];
-
-                    // standard Gauss–Seidel update
-                    const double gsPhi = 0.25 * (nb + rho_q[idx]);
-
-                    // SOR update: blend old and GS value
-                    const double newPhi = (1.0 - omega) * oldPhi
-                                  + omega       * gsPhi;
-
-                    phi[idx] = newPhi;
-                    const double err = fabs(newPhi - oldPhi);
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // === BLACK sweep (i+j odd) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 1; j < NY - 1; ++j) {
-            for (size_t i = 1; i < NX - 1; ++i) {
-                if (((i + j) & 1) == 1) {
-                    const size_t idx = INDEX(i, j,NX);
-                    const double oldPhi = phi[idx];
-
-                    const double nb = phi[INDEX(i+1, j,NX)]
-                              + phi[INDEX(i-1, j,NX)]
-                              + phi[INDEX(i, j+1,NX)]
-                              + phi[INDEX(i, j-1,NX)];
-
-                    const double gsPhi = 0.25 * (nb + rho_q[idx]);
-                    const double newPhi = (1.0 - omega) * oldPhi
-                                  + omega       * gsPhi;
-
-                    phi[idx] = newPhi;
-                    const double err = fabs(newPhi - oldPhi);
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // check convergence
-        if (maxErr < tol) {
-            break;  // solution converged early
-        }
-    }
-
-    // Compute interior E field (central differences)
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 1; j < NY - 1; ++j) {
-        for (size_t i = 1; i < NX - 1; ++i) {
-            const size_t idx = INDEX(i, j,NX);
-            Ex[idx] = -0.5 * (phi[INDEX(i+1, j,NX)] - phi[INDEX(i-1, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, j+1,NX)] - phi[INDEX(i, j-1,NX)]);
-        }
-    }
-
-    // Zero‑Neumann BC: copy adjacent interior value to boundary
-    #pragma omp parallel for
-    for (size_t i = 0; i < NX; ++i) {
-        Ex[INDEX(i,   0,NX)] = Ex[INDEX(i,   1,NX)];
-        Ey[INDEX(i,   0,NX)] = Ey[INDEX(i,   1,NX)];
-        Ex[INDEX(i,NY-1,NX)] = Ex[INDEX(i,NY-2,NX)];
-        Ey[INDEX(i,NY-1,NX)] = Ey[INDEX(i,NY-2,NX)];
-    }
-    #pragma omp parallel for
-    for (size_t j = 0; j < NY; ++j) {
-        Ex[INDEX(  0, j,NX)] = Ex[INDEX(  1, j,NX)];
-        Ey[INDEX(  0, j,NX)] = Ey[INDEX(  1, j,NX)];
-        Ex[INDEX(NX-1, j,NX)] = Ex[INDEX(NX-2, j,NX)];
-        Ey[INDEX(NX-1, j,NX)] = Ey[INDEX(NX-2, j,NX)];
-    }
-}
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: SOR when BC are periodic for consistency.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_SOR_Periodic() {
-    const size_t maxIter = 5000;           // maximum iterations
-    const double tol    = 1e-8;            // convergence tolerance
-    const double omega  = omega_sor;       // relaxation parameter
-
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // === RED sweep (i+j even) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 0; j < NY; ++j) {
-            for (size_t i = 0; i < NX; ++i) {
-                if (((i + j) & 1) == 0) {
-                    // periodic neighbor indices
-                    const size_t ip = (i + 1) % NX;
-                    const size_t im = (i + NX - 1) % NX;
-                    const size_t jp = (j + 1) % NY;
-                    const size_t jm = (j + NY - 1) % NY;
-
-                    const size_t idx = INDEX(i, j,NX);
-                    const double oldPhi = phi[idx];
-
-                    // Gauss–Seidel stencil sum
-                    const double sumNb = phi[INDEX(ip, j,NX)]
-                                 + phi[INDEX(im, j,NX)]
-                                 + phi[INDEX(i, jp,NX)]
-                                 + phi[INDEX(i, jm,NX)];
-
-                    const double gsPhi   = 0.25 * (sumNb + rho_q[idx]);
-                    const double newPhi  = (1.0 - omega) * oldPhi
-                                   + omega       * gsPhi;
-                    phi[idx]       = newPhi;
-
-                    const double err = fabs(newPhi - oldPhi);
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // === BLACK sweep (i+j odd) ===
-        #pragma omp parallel for collapse(2) reduction(max:maxErr)
-        for (size_t j = 0; j < NY; ++j) {
-            for (size_t i = 0; i < NX; ++i) {
-                if (((i + j) & 1) == 1) {
-                    const size_t ip = (i + 1) % NX;
-                    const size_t im = (i + NX - 1) % NX;
-                    const size_t jp = (j + 1) % NY;
-                    const size_t jm = (j + NY - 1) % NY;
-
-                    const size_t idx = INDEX(i, j,NX);
-                    const double oldPhi = phi[idx];
-
-                    const double sumNb = phi[INDEX(ip, j,NX)]
-                                 + phi[INDEX(im, j,NX)]
-                                 + phi[INDEX(i, jp,NX)]
-                                 + phi[INDEX(i, jm,NX)];
-
-                    const double gsPhi   = 0.25 * (sumNb + rho_q[idx]);
-                    const double newPhi  = (1.0 - omega) * oldPhi
-                                   + omega       * gsPhi;
-                    phi[idx]       = newPhi;
-
-                    const double err = fabs(newPhi - oldPhi);
-                    if (err > maxErr) maxErr = err;
-                }
-            }
-        }
-
-        // convergence check
-        if (maxErr < tol) {
-            break;
-        }
-    }
-
-    // Compute periodic electric field E = -∇φ
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 0; j < NY; ++j) {
-        for (size_t i = 0; i < NX; ++i) {
-            const size_t ip = (i + 1) % NX;
-            const size_t im = (i + NX - 1) % NX;
-            const size_t jp = (j + 1) % NY;
-            const size_t jm = (j + NY - 1) % NY;
-
-            const size_t idx = INDEX(i, j,NX);
-            Ex[idx] = -0.5 * (phi[INDEX(ip, j,NX)] - phi[INDEX(im, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, jp,NX)] - phi[INDEX(i, jm,NX)]);
-        }
-    }
-}
-
-
-
-
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: FFT (with periodic BCs).  
-// Solves ∇²φ = –ρ_q by:
-//   1) Forward real-to-complex FFT of rho_q → rho_hat(k)
-//   2) Compute φ̂ (k) = –ρ̂ (k) / [4 sin²(π kx/NX) + 4 sin²(π ky/NY)]
-//      (zeroing the k=0 mode to enforce zero-mean potential)
-//   3) Inverse complex-to-real FFT of φ̂ → φ(x)
-//   4) Normalize by NX*NY and reconstruct E = –∇φ via central differences
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_fft() {
-    // Assumption: rho_q[i] is charge density in lattice units.
-    // The net charge should be approximately zero.
-    // If not, the k=0 component will be removed → potential average = 0.
-
-    //index conversion: Since FFTW takes only int numbers we have to convert the grid to that values
-    const int NXf = static_cast<int>(NX);
-    const int NYf = static_cast<int>(NY);
-    const int NYf_half = NYf / 2 + 1;//only NYf/2 +1 are unique coefficients
-    const int real_size = NXf * NYf;//size of real space
-    const int complex_size = NXf * NYf_half;//size of complex space
-
-    // Allocate FFTW arrays
-    // In order to solve a probelam in the Fourier space we need to convert things in the frequency domani, then solve and the convert back 
-    double *in = (double*) fftw_malloc(sizeof(double) * real_size);                             //rho array in the real space
-    fftw_complex *rho_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * complex_size);   //rho array in the complex space
-    fftw_complex *phi_hat = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * complex_size);   //phi array in the complex space
-    double *out = (double*) fftw_malloc(sizeof(double) * real_size);                            //phi array in the real space
-
-    // Copy input charge density into FFT input array
-    #pragma omp parallel for
-    for (int idx = 0; idx < real_size; ++idx) {
-        in[idx] = rho_q[idx];
-    }
-
-    // Create FFTW plans (note: FFTW_ESTIMATE is thread-safe)
-    fftw_plan plan_r2c = fftw_plan_dft_r2c_2d(NXf, NYf, in, rho_hat, FFTW_ESTIMATE);  //plane for the transformation from rho real to rho complex
-    fftw_plan plan_c2r = fftw_plan_dft_c2r_2d(NXf, NYf, phi_hat, out, FFTW_ESTIMATE); //plane for the transformation from phi complex to phi real 
-    
-    // Forward FFT: rho_q -> rho_hat
-    fftw_execute(plan_r2c);
-
-    // Solve Poisson's equation in Fourier space:
-    // ∇²φ = -rho → φ_hat = rho_hat / (kx² + ky²)
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < NXf; ++i) {
-        for (int j = 0; j < NYf_half; ++j) {
-            const int kx = (i <= NXf / 2) ? i : i - NXf; //this ensures that kx index are centered around 0
-            const int ky = j;
-            const double sinx = std::sin(M_PI * kx / NXf);
-            const double siny = std::sin(M_PI * ky / NYf);
-            const double denom = 4.0 * (sinx * sinx + siny * siny);
-
-            const size_t index = static_cast<size_t>(i) * NYf_half + j;
-
-            if (denom > 1e-15) {
-                phi_hat[index][0] = rho_hat[index][0] / denom;
-                phi_hat[index][1] = rho_hat[index][1] / denom;
-            } else {
-                // Set zero mode to zero to enforce zero average potential (Gauge condition)
-                // This is done for the zeroth mode φ_hat(0)
-                phi_hat[index][0] = 0.0;
-                phi_hat[index][1] = 0.0;
-            }
-        }
-    }
-
-    // Inverse FFT: phi_hat -> out
-    fftw_execute(plan_c2r);// This is not yet normalized so we need to normalize it
-
-    // Normalize result (FFTW does not normalize the inverse transform)
-    const double norm = 1.0 / real_size; //Implicit conversion no need for casting
-    #pragma omp parallel for
-    for (int idx = 0; idx < real_size; ++idx) {
-        phi[idx] = out[idx] * norm;
-    }
-
-    // Clean up FFTW allocations and plans
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(in);
-    fftw_free(out);
-    fftw_free(rho_hat);
-    fftw_free(phi_hat);
-
-    // Compute electric field from potential using central differences
-    // Periodic boundaries are handled with modulo indexing
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 0; j < NY; ++j) {
-        for (size_t i = 0; i < NX; ++i) {
-            const size_t im1 = (i + NX - 1) % NX;
-            const size_t ip1 = (i + 1) % NX;
-            const size_t jm1 = (j + NY - 1) % NY;
-            const size_t jp1 = (j + 1) % NY;
-            const size_t idx = INDEX(i, j,NX);
-
-            Ex[idx] = -0.5 * (phi[INDEX(ip1, j,NX)] - phi[INDEX(im1, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, jp1,NX)] - phi[INDEX(i, jm1,NX)]);
-        }
-    }
-}
-
-
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: 9-point stencil with Dirichlet φ=0 on boundary.
-//    We solve  ∇²_latt φ_latt = − ρ_q_latt.
-//    Then φ_new = (4*neighbors + diagonals + 6*RHS) / 20.
-//
-//  After convergence, we reconstruct E with centered differences:
-//    E_x = −(φ[i+1,j] − φ[i−1,j]) / (2), etc.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_9point() {
-    const size_t maxIter = 5000;    // maximum iterations
-    const double tol     = 1e-8;    // convergence tolerance
-
-    // Iterate until convergence or maxIter
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // We need 4 colors so that no two stencil neighbors share the same color.
-        // color = 2*(i%2) + (j%2) ∈ {0,1,2,3}
-        for (size_t sweep = 0; sweep < 4; ++sweep) {
-            double maxErrSweep = 0.0;
-
-            #pragma omp parallel for collapse(2) reduction(max:maxErrSweep)
-            for (size_t j = 1; j < NY - 1; ++j) {
-                for (size_t i = 1; i < NX - 1; ++i) {
-                    // determine checkerboard color
-                    if ((2 * (i & 1) + (j & 1)) != sweep) 
-                        continue;
-
-                    const size_t idx       = INDEX(i, j,NX);
-                    const size_t ip1_j     = INDEX(i+1, j,NX);
-                    const size_t im1_j     = INDEX(i-1, j,NX);
-                    const size_t i_jp1     = INDEX(i, j+1,NX);
-                    const size_t i_jm1     = INDEX(i, j-1,NX);
-                    const size_t ip1_jp1   = INDEX(i+1, j+1,NX);
-                    const size_t im1_jp1   = INDEX(i-1, j+1,NX);
-                    const size_t ip1_jm1   = INDEX(i+1, j-1,NX);
-                    const size_t im1_jm1   = INDEX(i-1, j-1,NX);
-
-                    // orthogonal neighbors
-                    const double sumOrtho = phi[ip1_j] + phi[im1_j]
-                                    + phi[i_jp1] + phi[i_jm1];
-                    // diagonal neighbors
-                    const double sumDiag  = phi[ip1_jp1] + phi[im1_jp1]
-                                    + phi[ip1_jm1] + phi[im1_jm1];
-
-                    // 9‑point update
-                    const double newPhi = (4.0*sumOrtho + sumDiag + 6.0*rho_q[idx]) / 20.0;
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx]      = newPhi;
-
-                    if (err > maxErrSweep) maxErrSweep = err;
-                }
-            }
-
-            // combine sweep error into global error
-            if (maxErrSweep > maxErr) maxErr = maxErrSweep;
-        }
-
-        // check convergence
-        if (maxErr < tol) {
-            break;
-        }
-    }
-
-    // Compute electric field (central differences) for interior nodes
-    #pragma omp parallel for collapse(2)
-    for (size_t j = 1; j < NY - 1; ++j) {
-        for (size_t i = 1; i < NX - 1; ++i) {
-            const size_t idx = INDEX(i, j,NX);
-            Ex[idx] = -0.5 * (phi[INDEX(i+1, j,NX)] - phi[INDEX(i-1, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, j+1,NX)] - phi[INDEX(i, j-1,NX)]);
-        }
-    }
-
-    // Zero‑Neumann BC: copy nearest interior field to boundaries
-    #pragma omp parallel for
-    for (size_t i = 0; i < NX; ++i) {
-        Ex[INDEX(i,   0,NX)] = Ex[INDEX(i,   1,NX)];
-        Ey[INDEX(i,   0,NX)] = Ey[INDEX(i,   1,NX)];
-        Ex[INDEX(i,NY-1,NX)] = Ex[INDEX(i,NY-2,NX)];
-        Ey[INDEX(i,NY-1,NX)] = Ey[INDEX(i,NY-2,NX)];
-    }
-    #pragma omp parallel for
-    for (size_t j = 0; j < NY; ++j) {
-        Ex[INDEX(  0, j,NX)] = Ex[INDEX(  1, j,NX)];
-        Ey[INDEX(  0, j,NX)] = Ey[INDEX(  1, j,NX)];
-        Ex[INDEX(NX-1, j,NX)] = Ex[INDEX(NX-2, j,NX)];
-        Ey[INDEX(NX-1, j,NX)] = Ey[INDEX(NX-2, j,NX)];
-    }
-}
-//──────────────────────────────────────────────────────────────────────────────
-//  Poisson solver: 9-point stencil when BC are periodic for consistency.
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::SolvePoisson_9point_Periodic() {
-    const size_t maxIter = 5000;    // maximum iterations
-    const double tol     = 1e-8;    // convergence tolerance
-
-    // Main GS iteration with 4‑color ordering
-    for (size_t iter = 0; iter < maxIter; ++iter) {
-        double maxErr = 0.0;
-
-        // Perform one sweep for each of the 4 colors
-        for (size_t sweep = 0; sweep < 4; ++sweep) {
-            double maxErrSweep = 0.0;
-
-            #pragma omp parallel for collapse(2) reduction(max:maxErrSweep) schedule(static)
-            for (size_t j = 0; j < NY; ++j) {
-                for (size_t i = 0; i < NX; ++i) {
-                    // determine 4‑color index: 2*(i%2) + (j%2) in {0,1,2,3}
-                    if ((2 * (i & 1) + (j & 1)) != sweep) 
-                        continue;
-
-                    // periodic neighbor indices
-                    const size_t ip = (i + 1) % NX;
-                    const size_t im = (i + NX - 1) % NX;
-                    const size_t jp = (j + 1) % NY;
-                    const size_t jm = (j + NY - 1) % NY;
-
-                    // flattened indices
-                    const size_t idx   = INDEX(i,  j,NX);
-                    const size_t idxE  = INDEX(ip, j,NX);
-                    const size_t idxW  = INDEX(im, j,NX);
-                    const size_t idxN  = INDEX(i,  jp,NX);
-                    const size_t idxS  = INDEX(i,  jm,NX);
-                    const size_t idxNE = INDEX(ip, jp,NX);
-                    const size_t idxNW = INDEX(im, jp,NX);
-                    const size_t idxSE = INDEX(ip, jm,NX);
-                    const size_t idxSW = INDEX(im, jm,NX);
-
-                    // orthogonal and diagonal neighbor sums
-                    const double sumO = phi[idxE]  + phi[idxW]
-                                + phi[idxN]  + phi[idxS];
-                    const double sumD = phi[idxNE] + phi[idxNW]
-                                + phi[idxSE] + phi[idxSW];
-
-                    // 9‑point Gauss–Seidel update
-                    const double newPhi = (4.0 * sumO + sumD + 6.0 * rho_q[idx]) * 0.05; // /20
-                    const double err    = fabs(newPhi - phi[idx]);
-                    phi[idx]      = newPhi;
-
-                    if (err > maxErrSweep) maxErrSweep = err;
-                }
-            }
-
-            // accumulate the worst error across all sweeps
-            if (maxErrSweep > maxErr) maxErr = maxErrSweep;
-        }
-
-        // convergence check
-        if (maxErr < tol) {
-            break;
-        }
-    }
-
-    // Reconstruct periodic E = –∇φ with central differences
-    #pragma omp parallel for collapse(2) schedule(static)
-    for (size_t j = 0; j < NY; ++j) {
-        for (size_t i = 0; i < NX; ++i) {
-            const size_t im  = (i + NX - 1) % NX;
-            const size_t ip  = (i + 1) % NX;
-            const size_t jm = (j + NY - 1) % NY;
-            const size_t jp = (j + 1) % NY;
-            const size_t idx = INDEX(i, j,NX);
-
-            Ex[idx] = -0.5 * (phi[INDEX(ip, j,NX)] - phi[INDEX(im, j,NX)]);
-            Ey[idx] = -0.5 * (phi[INDEX(i, jp,NX)] - phi[INDEX(i, jm,NX)]);
-        }
-    }
-}
-
-//──────────────────────────────────────────────────────────────────────────────
-//  Collision step (BGK + Guo forcing) for both species:
-//    f_e_post = f_e - (1/τ_e)(f_e - f_e^eq) + F_e
-//    f_i_post = f_i - (1/τ_i)(f_i - f_i^eq) + F_i
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::Collisions() {
-    #pragma omp parallel for collapse(2)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
-            const size_t idx = INDEX(x, y,NX);
-            
-            const double Ex_loc = Ex[idx];
-            const double Ey_loc = Ey[idx];
-
-            for (size_t i = 0; i < Q; ++i) {
-                const size_t idx_3 = INDEX(x, y, i,NX,Q);
-                
-                const double F_e = w[i] * q_e * rho_e[idx] / m_e / cs2 * (1.0-1.0/(2*tau_e)) * (
-                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                    (cx[i]*ux_e[idx]+cy[i]*uy_e[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                    (ux_e[idx]*Ex_loc+uy_e[idx]*Ey_loc)
-                );
-                const double F_i = w[i] * q_i * rho_i[idx] / m_i / cs2 * (1.0-1.0/(2*tau_i)) * (
-                    (cx[i]*Ex_loc+cy[i]*Ey_loc)+
-                    (cx[i]*ux_i[idx]+cy[i]*uy_i[idx])*(cx[i]*Ex_loc+cy[i]*Ey_loc)/cs2-
-                    (ux_i[idx]*Ex_loc+uy_i[idx]*Ey_loc)
-                );//maybe simplify a bit the writing
-               
-                // Compute complete collisions terms
-                const double C_e = -(f_e[idx_3]-f_eq_e[idx_3]) / tau_e -(f_e[idx_3]-f_eq_e_i[idx_3]) / tau_e_i -(f_e[idx_3]-f_eq_e_n[idx_3]) / tau_e_n;
-                const double C_i = -(f_i[idx_3]-f_eq_i[idx_3]) / tau_i -(f_i[idx_3]-f_eq_i_e[idx_3]) / tau_e_i -(f_i[idx_3]-f_eq_i_n[idx_3]) / tau_i_n;
-                const double C_n = -(f_n[idx_3]-f_eq_n[idx_3]) / tau_n -(f_n[idx_3]-f_eq_n_e[idx_3]) / tau_e_n -(f_n[idx_3]-f_eq_n_i[idx_3]) / tau_i_n;
-
-                // Update distribution functions with Guo forcing term
-                f_temp_e[idx_3] = f_e[idx_3] + C_e + F_e;
-                f_temp_i[idx_3] = f_i[idx_3] + C_i + F_i;
-                f_temp_n[idx_3] = f_n[idx_3] + C_n;
-            }
-        }
-    }
-    // Swap temporary arrays with main arrays
-    f_e.swap(f_temp_e);
-    f_i.swap(f_temp_i);
-    f_n.swap(f_temp_n);
-}
-//──────────────────────────────────────────────────────────────────────────────
-//  Thermal Collision step for both species:
-//    g_e_post = g_e - (1/τ_Te)(g_e - g_e^eq) + Source
-//    g_i_post = g_i - (1/τ_Ti)(g_i - g_i^eq) + Source
-//  Now no Source is added
-//──────────────────────────────────────────────────────────────────────────────
-void LBmethod::ThermalCollisions() {
-    #pragma omp parallel for collapse(3)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
-            for (size_t i = 0; i < Q; ++i) {
-                const size_t idx_3 = INDEX(x, y, i,NX,Q);
-                const size_t idx_2 = INDEX(x, y,NX);
-
-                const double term_ee=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e)*(1-1/tau_e)-2.0*(1.0-1.0/tau_e)*rho_e[idx_2]-Q*f_eq_e[idx_3]/tau_e)/(2.0*(2.0*(1.0-1.0/tau_e)+Q*f_eq_e[idx_3]/tau_e));
-                const double term_ei=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_e[idx_2]-Q*f_eq_e_i[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_e_i[idx_3]/tau_e_i));
-                const double term_en=(2.0*rho_e[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_e[idx_2]-Q*f_eq_e_n[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_e_n[idx_3]/tau_e_n));
-
-                const double term_ii=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i)*(1-1/tau_i)-2.0*(1.0-1.0/tau_i)*rho_i[idx_2]-Q*f_eq_i[idx_3]/tau_i)/(2.0*(2.0*(1.0-1.0/tau_i)+Q*f_eq_i[idx_3]/tau_i));
-                const double term_ie=(2.0*rho_i[idx_2]*(1.0-1.0/tau_e_i)*(1-1/tau_e_i)-2.0*(1.0-1.0/tau_e_i)*rho_i[idx_2]-Q*f_eq_i_e[idx_3]/tau_e_i)/(2.0*(2.0*(1.0-1.0/tau_e_i)+Q*f_eq_i_e[idx_3]/tau_e_i));
-                const double term_in=(2.0*rho_i[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_i[idx_2]-Q*f_eq_i_n[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_i_n[idx_3]/tau_i_n));
-
-                const double term_nn=(2.0*rho_n[idx_2]*(1.0-1.0/tau_n)*(1-1/tau_n)-2.0*(1.0-1.0/tau_n)*rho_n[idx_2]-Q*f_eq_n[idx_3]/tau_n)/(2.0*(2.0*(1.0-1.0/tau_n)+Q*f_eq_n[idx_3]/tau_n));
-                const double term_ne=(2.0*rho_n[idx_2]*(1.0-1.0/tau_e_n)*(1-1/tau_e_n)-2.0*(1.0-1.0/tau_e_n)*rho_n[idx_2]-Q*f_eq_n_e[idx_3]/tau_e_n)/(2.0*(2.0*(1.0-1.0/tau_e_n)+Q*f_eq_n_e[idx_3]/tau_e_n));
-                const double term_ni=(2.0*rho_n[idx_2]*(1.0-1.0/tau_i_n)*(1-1/tau_i_n)-2.0*(1.0-1.0/tau_i_n)*rho_n[idx_2]-Q*f_eq_n_i[idx_3]/tau_i_n)/(2.0*(2.0*(1.0-1.0/tau_i_n)+Q*f_eq_n_i[idx_3]/tau_i_n));
-
-                const double DeltaE_e= rho_e[idx_2]*(term_ee+ term_ei+term_en)*(ux_e[idx_2]*ux_e[idx_2]+uy_e[idx_2]*uy_e[idx_2]);
-                const double DeltaE_i= rho_i[idx_2]*(term_ii+ term_ie+term_in)*(ux_i[idx_2]*ux_i[idx_2]+uy_i[idx_2]*uy_i[idx_2]);
-                const double DeltaE_n= rho_n[idx_2]*(term_nn+ term_ne+term_ni)*(ux_n[idx_2]*ux_n[idx_2]+uy_n[idx_2]*uy_n[idx_2]);
-
-                const double DeltaT_e= - DeltaE_e/Kb;
-                const double DeltaT_i= - DeltaE_i/Kb;
-                const double DeltaT_n= - DeltaE_n/Kb;
-
-                // Compute complete collisions terms
-                const double C_Te = -(g_e[idx_3]-g_eq_e[idx_3]) / tau_e -(g_e[idx_3]-g_eq_e_i[idx_3]) / tau_e_i -(g_e[idx_3]-g_eq_e_n[idx_3]) / tau_e_n;
-                const double C_Ti = -(g_i[idx_3]-g_eq_i[idx_3]) / tau_i -(g_i[idx_3]-g_eq_i_e[idx_3]) / tau_e_i -(g_i[idx_3]-g_eq_i_n[idx_3]) / tau_i_n;
-                const double C_Tn = -(g_n[idx_3]-g_eq_n[idx_3]) / tau_n -(g_n[idx_3]-g_eq_n_e[idx_3]) / tau_e_n -(g_n[idx_3]-g_eq_n_i[idx_3]) / tau_i_n;
-
-                // Update distribution functions with Guo forcing term
-                g_temp_e[idx_3] = g_e[idx_3]+ C_Te + DeltaT_e;
-                g_temp_i[idx_3] = g_i[idx_3]+ C_Ti + DeltaT_i;
-                g_temp_n[idx_3] = g_n[idx_3]+ C_Tn + DeltaT_n;
-            }
-        }
-    }
-    // Swap temporary arrays with main arrays
-    g_e.swap(g_temp_e);
-    g_i.swap(g_temp_i);
-    g_n.swap(g_temp_n);
-}
 
 void LBmethod::Run_simulation() {
     
     // Set threads for this simulation
     omp_set_num_threads(n_cores);
 
-    // Inizializza CSV time series
-    InitTimeSeries();
-
-
-    // Pre‐compute the frame sizes for each video:
-    const int border       = 10;
-    const int label_height = 30;
-    const int tile_w       = NX + 2 * border;                // panel width
-    const int tile_h       = NY + 2 * border + label_height; // panel height
-    const double fps       = 1.0; // frames per second for videos
-
-    // --- Density‐video (2 panels side by side) ---
-    {
-        int legend_width = 40, text_area = 60;
-        int panel_width  = legend_width + text_area;
-        int frame_w = 3 * tile_w + 2 * panel_width + 4 * border;
-        int frame_h = tile_h;
-        video_writer_density.open(
-            "video_density.mp4",
-            cv::VideoWriter::fourcc('m','p','4','v'),
-            fps,                        // fps
-            cv::Size(frame_w, frame_h),
-            true                        // isColor
-        );
-        if (!video_writer_density.isOpened()) {
-            std::cerr << "Cannot open video_density.mp4 for writing\n";
-            return;
-        }
-    }
-
-    // --- Velocity‐video (2 rows × 3 columns = 6 panels) ---
-    {
-        int frame_w = 3 * (NX + 2 * border);                         // 3 tiles in larghezza
-        int frame_h = 2 * (NY + 2 * border + label_height);          // 2 tiles in altezza
-
-        video_writer_velocity.open(
-            "video_velocity.mp4",
-            cv::VideoWriter::fourcc('m','p','4','v'),
-            fps,
-            cv::Size(frame_w, frame_h),
-            true
-        );
-        if (!video_writer_velocity.isOpened()) {
-            std::cerr << "Cannot open video_velocity.mp4 for writing\n";
-            return;
-        }
-    }
-
-
-
-    // --- Temperature‐video (2 panels side by side) ---
-    {
-        int frame_w = 2 * tile_w;
-        int frame_h = tile_h;
-        video_writer_temperature.open(
-            "video_temperature.mp4",
-            cv::VideoWriter::fourcc('m','p','4','v'),
-            fps,
-            cv::Size(frame_w, frame_h),
-            true
-        );
-        if (!video_writer_temperature.isOpened()) {
-            std::cerr << "Cannot open video_temperature.mp4 for writing\n";
-            return;
-        }
-    }
-
-    
+    // Initialize visualize stuff
+    visualize::InitVisualization(NX, NY, NSTEPS);
 
     //──────────────────────────────────────────────────────────────────────────────
     //  Main loop: for t = 0 … NSTEPS−1,
     //    [1] Update macros (ρ, u)
-    //    [2] Solve Poisson → update Ex, Ey
+    //    [2] Calculate equilibrium distribution functions
     //    [3] Collisions (BGK + forcing)
     //    [4] Streaming (+ BC)
-    //    [5] Visualization
+    //    [5] Solve Poisson → update Ex, Ey
+    //    [6] Visualization
     //──────────────────────────────────────────────────────────────────────────────
-    for (size_t t=0; t<NSTEPS; ++t){
-        
-        UpdateMacro(); // rho=sum(f), ux=sum(f*c_x)/rho, uy=sum(f*c_y)/rho  
+    for (int t=0; t<NSTEPS; ++t){
+        // Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F  T=Σ_i g_i
+        UpdateMacro(); 
         ComputeEquilibrium();
-        ThermalCollisions();
-        Collisions(); // f(x,y,t+1)=f(x-cx,y-cy,t) + tau * (f_eq - f) + dt*F
 
-        // f(x,y,t+1)=f(x-cx,y-cy,t)
+        // g(x,y,t)_postcoll=g(x,y,t) + (g_eq - g)/tau + Source
+        // f(x,y,t)_postcoll=f(x,y,t) + (f_eq - f)/tau + dt*F
+        collisions::Collide(g_e, g_i, g_n, g_eq_e, g_eq_i, g_eq_n,
+                            g_eq_e_i, g_eq_e_n, g_eq_i_n, g_eq_i_e, g_eq_n_e, g_eq_n_i,
+                            f_e, f_i, f_n, f_eq_e, f_eq_i, f_eq_n,
+                            f_eq_e_i, f_eq_e_n, f_eq_i_n, f_eq_i_e, f_eq_n_e, f_eq_n_i,
+                            rho_e, rho_i, rho_n,
+                            ux_e, uy_e,
+                            ux_i, uy_i,
+                            ux_n, uy_n,
+                            Ex, Ey,
+                            q_e, q_i,
+                            m_e, m_i,
+                            f_temp_e, f_temp_i, f_temp_n,
+                            cx, cy, w,
+                            NX, NY, Kb, cs2); 
+
+        // f(x+cx,y+cx,t+1)=f(x,y,t)
+        // +BC applyed
         streaming::Stream(f_e, f_i, f_n, 
                           f_temp_e, f_temp_i, f_temp_n,
                           g_e, g_i, g_n,
-                          cx, cy, opp,
+                          cx, cy,
                           NX, NY, bc_type);
-
-        SolvePoisson();
-
-        VisualizationDensity();
-        VisualizationVelocity();
-        VisualizationTemperature();
-        RecordTimeSeriesStep(t);
+        // Solve the poisson equation with the method chosen
+        // Also BCs are important
+        poisson::SolvePoisson(Ex,
+                              Ey,
+                              rho_q,
+                              NX, NY,
+                              omega_sor,
+                              poisson_type,
+                              bc_type);
+    
+        // Update video and data for plot
+        visualize::UpdateVisualization(t, NX, NY,
+                                       ux_e, uy_e,
+                                       ux_i, uy_i,
+                                       ux_n, uy_n,
+                                       T_e, T_i, T_n,
+                                       rho_e, rho_i, rho_n,
+                                       rho_q, Ex, Ey);
     }
-
-    video_writer_density.release();
-    video_writer_velocity.release();
-    video_writer_temperature.release();
-
-    FinalizeTimeSeriesPlots();
+    //Close Visualize stuff
+    visualize::CloseVisualization();
 
 
-    std::cout << "Video saved, simulation ended " << std::endl;
-}
-//──────────────────────────────────────────────────────────────────────────────
-//  Visualization stub.  Use OpenCV to save density images at time t, etc.
-//──────────────────────────────────────────────────────────────────────────────
-
-// ============================
-// DENSITY VISUALIZATION
-// ============================
-void LBmethod::VisualizationDensity() {
-    constexpr int border = 10;
-    constexpr int label_height = 30;
-
-    static cv::Mat mat_n_e(NY, NX, CV_32F);
-    static cv::Mat mat_n_i(NY, NX, CV_32F);
-    static cv::Mat mat_rho_q(NY, NX, CV_32F);
-
-    #pragma omp parallel for collapse(2)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
-            size_t idx = INDEX(x, y,NX);
-            mat_n_e.at<float>(y, x) = static_cast<float>(rho_e[idx]);
-            mat_n_i.at<float>(y, x) = static_cast<float>(rho_i[idx]);
-            mat_rho_q.at<float>(y, x) = static_cast<float>(rho_q[idx]);
-        }
-    }
-
-    auto normalize_and_color = [](const cv::Mat& src, double vmin, double vmax) {
-        cv::Mat norm, color;
-        src.convertTo(norm, CV_8U, 255.0 / (vmax - vmin), -vmin * 255.0 / (vmax - vmin));
-        cv::applyColorMap(norm, color, cv::COLORMAP_JET);
-        cv::flip(color, color, 0);
-        return color;
-    };
-
-    auto wrap_with_label = [&](const cv::Mat& img, const std::string& label) {
-        cv::Mat bordered;
-        cv::copyMakeBorder(img, bordered, border, border + label_height, border, border,
-                           cv::BORDER_CONSTANT, cv::Scalar(255,255,255));
-        cv::putText(bordered, label, cv::Point(border + 5, bordered.rows - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,0), 1);
-        return bordered;
-    };
-
-    auto c_n_e = normalize_and_color(mat_n_e, DENSITY_E_MIN, DENSITY_E_MAX);
-    auto c_rho = normalize_and_color(mat_rho_q, CHARGE_MIN, CHARGE_MAX);
-    auto c_n_i = normalize_and_color(mat_n_i, DENSITY_I_MIN, DENSITY_I_MAX);
-
-    auto w_n_e = wrap_with_label(c_n_e, "rho_e");
-    auto w_rho = wrap_with_label(c_rho, "rho_q");
-    auto w_n_i = wrap_with_label(c_n_i, "rho_i");
-
-    cv::Mat grid;
-    cv::hconcat(std::vector<cv::Mat>{w_n_e, w_rho, w_n_i}, grid);
-
-    int total_width = grid.cols + 2 * (40 + 60) + 4 * border;
-    int total_height = grid.rows;
-    cv::Mat frame(total_height, total_width, CV_8UC3, cv::Scalar(255,255,255));
-
-    // TODO: add legends on left and right if desired
-    grid.copyTo(frame(cv::Rect((total_width - grid.cols) / 2, 0, grid.cols, grid.rows)));
-
-    video_writer_density.write(frame);
-}
-
-
-// ============================
-// VELOCITY VISUALIZATION
-// ============================
-void LBmethod::VisualizationVelocity() {
-    constexpr int border = 10;
-    constexpr int label_height = 30;
-
-    static cv::Mat ux_e_mat(NY, NX, CV_32F), uy_e_mat(NY, NX, CV_32F), ue_mag(NY, NX, CV_32F);
-    static cv::Mat ux_i_mat(NY, NX, CV_32F), uy_i_mat(NY, NX, CV_32F), ui_mag(NY, NX, CV_32F);
-
-    #pragma omp parallel for collapse(2)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
-            size_t idx = INDEX(x, y,NX);
-            double ux_el = ux_e[idx], uy_el = uy_e[idx];
-            double ux_ion = ux_i[idx], uy_ion = uy_i[idx];
-            ux_e_mat.at<float>(y, x) = static_cast<float>(ux_el);
-            uy_e_mat.at<float>(y, x) = static_cast<float>(uy_el);
-            ue_mag.at<float>(y, x)   = static_cast<float>(std::sqrt(ux_el*ux_el + uy_el*uy_el));
-            ux_i_mat.at<float>(y, x) = static_cast<float>(ux_ion);
-            uy_i_mat.at<float>(y, x) = static_cast<float>(uy_ion);
-            ui_mag.at<float>(y, x)   = static_cast<float>(std::sqrt(ux_ion*ux_ion + uy_ion*uy_ion));
-        }
-    }
-
-    auto normalize_and_color = [](const cv::Mat& src, double vmin, double vmax) {
-        cv::Mat norm, color;
-        src.convertTo(norm, CV_8U, 255.0 / (vmax - vmin), -vmin * 255.0 / (vmax - vmin));
-        cv::applyColorMap(norm, color, cv::COLORMAP_JET);
-        cv::flip(color, color, 0);
-        return color;
-    };
-
-    auto wrap_with_label = [&](const cv::Mat& img, const std::string& label) {
-        cv::Mat bordered;
-        cv::copyMakeBorder(img, bordered, border, border + label_height, border, border,
-                           cv::BORDER_CONSTANT, cv::Scalar(255,255,255));
-        cv::putText(bordered, label, cv::Point(border + 5, bordered.rows - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,0), 1);
-        return bordered;
-    };
-
-    auto ue_x = normalize_and_color(ux_e_mat, UX_E_MIN, UX_E_MAX);
-    auto ue_y = normalize_and_color(uy_e_mat, UY_E_MIN, UY_E_MAX);
-    auto ue_m = normalize_and_color(ue_mag, UE_MAG_MIN, UE_MAG_MAX);
-    auto ui_x = normalize_and_color(ux_i_mat, UX_I_MIN, UX_I_MAX);
-    auto ui_y = normalize_and_color(uy_i_mat, UY_I_MIN, UY_I_MAX);
-    auto ui_m = normalize_and_color(ui_mag, UI_MAG_MIN, UI_MAG_MAX);
-
-    auto w1 = wrap_with_label(ue_x, "ux_e");
-    auto w2 = wrap_with_label(ue_y, "uy_e");
-    auto w3 = wrap_with_label(ue_m, "|u_e|");
-    auto w4 = wrap_with_label(ui_x, "ux_i");
-    auto w5 = wrap_with_label(ui_y, "uy_i");
-    auto w6 = wrap_with_label(ui_m, "|u_i|");
-
-    cv::Mat top, bot, grid;
-    cv::hconcat(std::vector<cv::Mat>{w1, w2, w3}, top);
-    cv::hconcat(std::vector<cv::Mat>{w4, w5, w6}, bot);
-    cv::vconcat(top, bot, grid);
-
-    video_writer_velocity.write(grid);
-}
-
-
-// ============================
-// TEMPERATURE VISUALIZATION
-// ============================
-void LBmethod::VisualizationTemperature() {
-    constexpr int border = 10;
-    constexpr int label_height = 30;
-
-    static cv::Mat Te_mat(NY, NX, CV_32F), Ti_mat(NY, NX, CV_32F);
-
-    #pragma omp parallel for collapse(2)
-    for (size_t x = 0; x < NX; ++x) {
-        for (size_t y = 0; y < NY; ++y) {
-            size_t idx = INDEX(x, y,NX);
-            Te_mat.at<float>(y, x) = static_cast<float>(T_e[idx]);
-            Ti_mat.at<float>(y, x) = static_cast<float>(T_i[idx]);
-        }
-    }
-
-    auto normalize_and_color = [](const cv::Mat& src, double vmin, double vmax) {
-        cv::Mat norm, color;
-        src.convertTo(norm, CV_8U, 255.0 / (vmax - vmin), -vmin * 255.0 / (vmax - vmin));
-        cv::applyColorMap(norm, color, cv::COLORMAP_JET);
-        cv::flip(color, color, 0);
-        return color;
-    };
-
-    auto wrap_with_label = [&](const cv::Mat& img, const std::string& label) {
-        cv::Mat bordered;
-        cv::copyMakeBorder(img, bordered, border, border + label_height, border, border,
-                           cv::BORDER_CONSTANT, cv::Scalar(255,255,255));
-        cv::putText(bordered, label, cv::Point(border + 5, bordered.rows - 5),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,0), 1);
-        return bordered;
-    };
-
-    auto col_Te = normalize_and_color(Te_mat, TEMP_E_MIN, TEMP_E_MAX);
-    auto col_Ti = normalize_and_color(Ti_mat, TEMP_I_MIN, TEMP_I_MAX);
-
-    auto w_Te = wrap_with_label(col_Te, "T_e");
-    auto w_Ti = wrap_with_label(col_Ti, "T_i");
-
-    cv::Mat grid;
-    cv::hconcat(std::vector<cv::Mat>{w_Te, w_Ti}, grid);
-
-    video_writer_temperature.write(grid);
-}
-
-void LBmethod::InitTimeSeries() {
-    // define the 9 sample‐points
-    size_t cx = NX/2, cy = NY/2;
-    size_t dx = NX/4, dy = NY/4;
-    sample_points = {
-      {cx,cy}, {cx+dx,cy}, {cx-dx,cy}, {cx,cy+dy}, {cx,cy-dy},
-      {cx+dx,cy+dy},{cx+dx,cy-dy},{cx-dx,cy+dy},{cx-dx,cy-dy}
-    };
-
-    // clear histories
-    ts.clear();
-    auto zero_hist = [&](auto &H){
-      H.clear(); H.reserve(1024);
-    };
-    zero_hist(hist_ux_e);    zero_hist(hist_uy_e);    zero_hist(hist_ue_mag);
-    zero_hist(hist_ux_i);    zero_hist(hist_uy_i);    zero_hist(hist_ui_mag);
-    zero_hist(hist_ux_n);    zero_hist(hist_uy_n);    zero_hist(hist_un_mag);
-    zero_hist(hist_T_e);     zero_hist(hist_T_i);     zero_hist(hist_T_n);
-    zero_hist(hist_rho_e);   zero_hist(hist_rho_i);   zero_hist(hist_rho_n);
-    zero_hist(hist_rho_q);   zero_hist(hist_Ex);      zero_hist(hist_Ey);
-    zero_hist(hist_E_mag);
-}
-
-
-void LBmethod::RecordTimeSeriesStep(size_t t) {
-    ts.push_back(t);
-    size_t P = sample_points.size();
-
-    // allocate one row per quantity
-    auto push_row = [&](auto &H, auto compute){
-      H.emplace_back(); 
-      auto &row = H.back();
-      row.resize(P);
-      for(size_t p=0; p<P; ++p){
-        auto [i,j] = sample_points[p];
-        size_t idx = INDEX(i,j,NX);
-        row[p] = compute(idx);
-      }
-    };
-
-    // electrons
-    push_row(hist_ux_e,  [&](size_t idx){ return ux_e[idx]; });
-    push_row(hist_uy_e,  [&](size_t idx){ return uy_e[idx]; });
-    push_row(hist_ue_mag, [&](size_t idx){
-      double x=ux_e[idx], y=uy_e[idx]; 
-      return std::sqrt(x*x+y*y);
-    });
-
-    // ions
-    push_row(hist_ux_i,  [&](size_t idx){ return ux_i[idx]; });
-    push_row(hist_uy_i,  [&](size_t idx){ return uy_i[idx]; });
-    push_row(hist_ui_mag, [&](size_t idx){
-      double x=ux_i[idx], y=uy_i[idx];
-      return std::sqrt(x*x+y*y);
-    });
-
-    // neutrals
-    push_row(hist_ux_n,  [&](size_t idx){ return ux_n[idx]; });
-    push_row(hist_uy_n,  [&](size_t idx){ return uy_n[idx]; });
-    push_row(hist_un_mag, [&](size_t idx){
-      double x=ux_n[idx], y=uy_n[idx];
-      return std::sqrt(x*x+y*y);
-    });
-
-    // temperatures
-    push_row(hist_T_e, [&](size_t idx){ return T_e[idx]; });
-    push_row(hist_T_i, [&](size_t idx){ return T_i[idx]; });
-    push_row(hist_T_n, [&](size_t idx){ return T_n[idx]; });
-
-    // densities
-    push_row(hist_rho_e, [&](size_t idx){ return rho_e[idx]; });
-    push_row(hist_rho_i, [&](size_t idx){ return rho_i[idx]; });
-    push_row(hist_rho_n, [&](size_t idx){ return rho_n[idx]; });
-    push_row(hist_rho_q, [&](size_t idx){ return rho_q[idx]; });
-
-    // fields
-    push_row(hist_Ex, [&](size_t idx){ return Ex[idx]; });
-    push_row(hist_Ey, [&](size_t idx){ return Ey[idx]; });
-    push_row(hist_E_mag, [&](size_t idx){
-      double x=Ex[idx], y=Ey[idx];
-      return std::sqrt(x*x+y*y);
-    });
-}
-
-void LBmethod::FinalizeTimeSeriesPlots() {
-    // helper to build legends "p0( i_j )", …
-    std::vector<std::string> legs;
-    for(size_t p=0; p<sample_points.size(); ++p){
-      auto [i,j]=sample_points[p];
-      std::ostringstream ss;
-      ss<<"p"<<p<<"("<<i<<"_"<<j<<")";
-      legs.push_back(ss.str());
-    }
-
-    // call PlotTimeSeriesDirect for each quantity
-    PlotTimeSeriesDirect("plot_ux_e.png","ux_e", legs, hist_ux_e);
-    PlotTimeSeriesDirect("plot_uy_e.png","uy_e", legs, hist_uy_e);
-    PlotTimeSeriesDirect("plot_ue_mag.png","|u_e|",legs, hist_ue_mag);
-    PlotTimeSeriesDirect("plot_ux_i.png","ux_i", legs, hist_ux_i);
-    PlotTimeSeriesDirect("plot_uy_i.png","uy_i", legs, hist_uy_i);
-    PlotTimeSeriesDirect("plot_ui_mag.png","|u_i|",legs, hist_ui_mag);
-    PlotTimeSeriesDirect("plot_ux_n.png","ux_n", legs, hist_ux_n);
-    PlotTimeSeriesDirect("plot_uy_n.png","uy_n", legs, hist_uy_n);
-    PlotTimeSeriesDirect("plot_un_mag.png","|u_n|",legs, hist_un_mag);
-    PlotTimeSeriesDirect("plot_T_e.png","T_e",  legs, hist_T_e);
-    PlotTimeSeriesDirect("plot_T_i.png","T_i",  legs, hist_T_i);
-    PlotTimeSeriesDirect("plot_T_n.png","T_n",  legs, hist_T_n);
-    PlotTimeSeriesDirect("plot_rho_e.png","rho_e", legs, hist_rho_e);
-    PlotTimeSeriesDirect("plot_rho_i.png","rho_i", legs, hist_rho_i);
-    PlotTimeSeriesDirect("plot_rho_n.png","rho_n", legs, hist_rho_n);
-    PlotTimeSeriesDirect("plot_rho_q.png","rho_q", legs, hist_rho_q);
-    PlotTimeSeriesDirect("plot_Ex.png","Ex",  legs, hist_Ex);
-    PlotTimeSeriesDirect("plot_Ey.png","Ey",  legs, hist_Ey);
-    PlotTimeSeriesDirect("plot_E_mag.png","|E|",legs, hist_E_mag);
-}
-
-void LBmethod::PlotTimeSeriesDirect(
-    const std::string &png_filename,
-    const std::string &title,
-    const std::vector<std::string> &legends,
-    const std::vector<std::vector<double>> &data)
-{
-    size_t Ncols = legends.size();
-    size_t npts  = ts.size();
-    if (npts < 2 || Ncols == 0) return;
-
-    // find t‐range and value‐range
-    double t_min = ts.front(), t_max = ts.back();
-    double vmin =  1e300, vmax = -1e300;
-    for (size_t c=0; c<Ncols; ++c)
-      for (double v : data[c]) {
-        vmin = std::min(vmin,v);
-        vmax = std::max(vmax,v);
-      }
-    if (vmin == vmax) { vmin -= 1; vmax += 1; }
-
-    // image setup
-    int W=800, H=600;
-    int ml=80, mr=40, mt=60, mb=80;
-    cv::Mat img(H,W,CV_8UC3,cv::Scalar(255,255,255));
-    cv::Point origin(ml,H-mb), xend(W-mr,H-mb), yend(ml,mt);
-    cv::line(img,origin,xend,cv::Scalar(0,0,0));
-    cv::line(img,origin,yend,cv::Scalar(0,0,0));
-    cv::putText(img,title,cv::Point(ml,mt/2),
-                cv::FONT_HERSHEY_SIMPLEX,0.8,cv::Scalar(0,0,0),2);
-
-    double pw = double(W-ml-mr), ph = double(H-mt-mb);
-    double xs = pw/(t_max-t_min), ys = ph/(vmax-vmin);
-
-    // ticks
-    int nt=5;
-    for(int k=0;k<=nt;++k){
-      double t = t_min + (t_max-t_min)*k/nt;
-      int x = int(ml + (t-t_min)*xs +0.5);
-      cv::line(img,{x,H-mb},{x,H-mb+5},cv::Scalar(0,0,0));
-      std::ostringstream ss; ss<<std::fixed<<std::setprecision(0)<<t;
-      cv::Size tsz = cv::getTextSize(ss.str(),cv::FONT_HERSHEY_SIMPLEX,0.5,1,0);
-      cv::putText(img,ss.str(),{x-tsz.width/2,H-mb+20},
-                  cv::FONT_HERSHEY_SIMPLEX,0.5,cv::Scalar(0,0,0));
-    }
-    for(int k=0;k<=nt;++k){
-      double v = vmin + (vmax-vmin)*k/nt;
-      int y = int(H-mb - (v-vmin)*ys +0.5);
-      cv::line(img,{ml,y},{ml-5,y},cv::Scalar(0,0,0));
-      std::ostringstream ss; ss<<std::fixed<<std::setprecision(2)<<v;
-      cv::Size tsz = cv::getTextSize(ss.str(),cv::FONT_HERSHEY_SIMPLEX,0.5,1,0);
-      cv::putText(img,ss.str(),{ml-10-tsz.width,y+tsz.height/2},
-                  cv::FONT_HERSHEY_SIMPLEX,0.5,cv::Scalar(0,0,0));
-    }
-
-    // plot curves
-    std::vector<cv::Scalar> cols = {
-      {255,0,0},{0,128,0},{0,0,255},{255,165,0},
-      {128,0,128},{0,255,255},{255,0,255},{128,128,0},{0,128,128}
-    };
-    for(size_t c=0; c<Ncols; ++c){
-      std::vector<cv::Point> pts; pts.reserve(npts);
-      for(size_t k=0;k<npts;++k){
-        int x = int(ml + (ts[k]-t_min)*xs + 0.5);
-        int y = int(H-mb - (data[c][k]-vmin)*ys + 0.5);
-        pts.emplace_back(x,y);
-      }
-      auto col = cols[c%cols.size()];
-      for(size_t k=1;k<pts.size(); ++k)
-        cv::line(img,pts[k-1],pts[k],col,1);
-    }
-
-    // legend
-    int lx=W-mr-150, ly=mt+10, lh=20;
-    for(size_t c=0;c<Ncols; ++c){
-      cv::rectangle(img,
-        cv::Point(lx,ly+c*lh),
-        cv::Point(lx+15,ly+15+c*lh),
-        cols[c%cols.size()],cv::FILLED);
-      cv::putText(img,legends[c],
-        cv::Point(lx+20, ly+12+c*lh),
-        cv::FONT_HERSHEY_SIMPLEX,0.5,cv::Scalar(0,0,0),1);
-    }
-
-    // axis labels
-    cv::putText(img,"time",
-                cv::Point((ml+W-mr)/2,H-mb+40),
-                cv::FONT_HERSHEY_SIMPLEX,0.6,cv::Scalar(0,0,0),1);
-    cv::putText(img,title,
-                cv::Point(10,(mt+H-mb)/2),
-                cv::FONT_HERSHEY_SIMPLEX,0.6,cv::Scalar(0,0,0),1);
-
-    cv::imwrite(png_filename, img);
+    std::cout << "Simulation ended " << std::endl;
 }
