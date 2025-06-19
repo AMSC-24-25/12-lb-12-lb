@@ -1,6 +1,10 @@
 #ifndef LBM_H
 #define LBM_H
 
+#include "streaming.hpp"
+#include "utils.hpp"
+
+
 #include <vector>
 #include <array>
 #include <utility>
@@ -22,8 +26,7 @@
 //--------------------------------------------------------------------------------
 // Enumerations for choosing Poisson solver and Streaming/BC type
 //--------------------------------------------------------------------------------
-enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4, MG=5};
-enum class BCType      { PERIODIC = 0, BOUNCE_BACK = 1 };
+enum class PoissonType { NONE = 0, GAUSS_SEIDEL = 1, SOR = 2, FFT = 3, NPS =4};
 //--------------------------------------------------------------------------------
 // LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
 // All “physical” parameters are passed in SI units to the constructor, and inside
@@ -38,10 +41,7 @@ public:
     //   NX, NY       : number of lattice nodes in x and y (grid size)
     //   n_cores      : number of OpenMP threads (optional, can be ignored)
     //   Z_ion, A_ion : ionic charge‐number and mass‐number (for computing ion mass)
-    //   r_ion        : ionic radius [m] (unused in this template but stored)
     //
-    //   Lx_SI, Ly_SI   : physical domain size in x and y [m]
-    //   dt_SI          : physical time‐step [s]
     //   T_e_SI, T_i_SI : electron and ion temperatures [K]
     //   Ex_SI, Ey_SI   : uniform external E‐field [V/m] (can be overridden by Poisson solver)
     //
@@ -49,13 +49,12 @@ public:
     //   bc_type        : which streaming/BC to use (PERIODIC or BOUNCE_BACK)
     //   omega_sor      : over‐relaxation factor for SOR (only used if poisson_type==SOR)
     //
-    LBmethod(const size_t    NSTEPS,
-             const size_t    NX,
-             const size_t    NY,
+    LBmethod(const int    NSTEPS,
+             const int    NX,
+             const int    NY,
              const size_t    n_cores,
              const size_t    Z_ion,
              const size_t    A_ion,
-             const double    r_ion,
              const double    Ex_SI,
              const double    Ey_SI,
              const double    T_e_SI_init,
@@ -64,50 +63,22 @@ public:
              const double    n_e_SI_init,
              const double    n_n_SI_init,
              const PoissonType poisson_type,
-             const BCType      bc_type,
+             const streaming::BCType      bc_type,
              const double    omega_sor);
 
     // Run the complete simulation (calls Initialize(), then loops on TimeSteps)
     void Run_simulation();
 
-    // Punti di campionamento
-    std::vector<std::pair<size_t,size_t>> sample_points;
-
-    // File streams per CSV
-    std::ofstream file_ux_e, file_uy_e, file_ue_mag;
-    std::ofstream file_ux_i, file_uy_i, file_ui_mag;
-    std::ofstream file_ux_n, file_uy_n, file_un_mag;
-    std::ofstream file_T_e, file_T_i, file_T_n;
-    std::ofstream file_rho_e, file_rho_i, file_rho_n, file_rho_q;
-    std::ofstream file_Ex, file_Ey, file_E_mag;
-    
-    // Funzioni per gestione CSV e plotting
-    void InitCSVTimeSeries();
-    void RecordCSVTimeStep(size_t t);
-    void CloseCSVAndPlot();  // Chiude file e genera i PNG
-
-    // File unico di debug
-    std::ofstream debug_file;
-
-    // Inizializza il file di debug (da chiamare una volta prima del loop)
-    void InitDebugDump(const std::string& filename="debug_dump.txt");
-
-    // Scarica lo stato dopo un certo step e una certa fase ("UpdateMacro", "Collisions", ...)
-    void DumpGridStateReadable(size_t step, const std::string& stage);
-
-    // Chiude il file di debug (da chiamare alla fine)
-    void CloseDebugDump();
 
 private:
     //──────────────────────────────────────────────────────────────────────────────
     // 1) “Raw” (SI) Inputs
     //──────────────────────────────────────────────────────────────────────────────
-    const size_t  NSTEPS;       // total number of time steps
-    const size_t  NX, NY;       // grid dimensions
+    const int  NSTEPS;       // total number of time steps
+    const int  NX, NY;       // grid dimensions
     const size_t  n_cores;      // # of OpenMP threads (optional)
     const size_t  Z_ion;        // ionic atomic number (e.g. Z=1 for H+)
     const size_t  A_ion;        // ionic mass # (e.g. A=1 for H+)
-    const double  r_ion;        // ionic radius [m] (just stored, not used here)
     const double    Ex_SI;
     const double    Ey_SI;
     const double    T_e_SI_init;
@@ -116,21 +87,19 @@ private:
     const double    n_e_SI_init;
     const double    n_n_SI_init;
     const PoissonType  poisson_type; // which Poisson solver to run
-    const BCType       bc_type;      // which streaming/BC we use
+    const streaming::BCType       bc_type;      // which streaming/BC we use
     const double       omega_sor;    // over‐relaxation factor for SOR
 
     //──────────────────────────────────────────────────────────────────────────────
     // 2) Physical Constants (SI)
     //──────────────────────────────────────────────────────────────────────────────
     static constexpr double kB_SI       = 1.380649e-23;   // [J/K]
-    static constexpr double h_planck_SI = 6.62607015e-34;  // [Js]
     static constexpr double e_charge_SI = 1.602176634e-19;// [C]
     static constexpr double epsilon0_SI = 8.854187817e-12;// [F/m]
     static constexpr double m_e_SI      = 9.10938356e-31; // [kg]
     static constexpr double u_SI        = 1.66053906660e-27; // [kg]
     static constexpr double m_p_SI      = 1.67262192595e-27; // [kg]
     static constexpr double m_ne_SI      = 1.67492749804e-27; // [kg]
-    static constexpr double r_el_SI     = 2.8179403267e-15; // [m] (classical electron radius)
 
     const double m_i_SI = A_ion * u_SI; //[kg]
     const double m_n_SI = A_ion * u_SI; //[kg]
@@ -149,31 +118,24 @@ private:
     const double v0_SI = L0_SI / t0_SI; // physical velocity [m/s]
     const double F0_SI = M0_SI * L0_SI / (t0_SI * t0_SI); // physical force [N]
 
-    //Collision parameters:
-    //const double nu_e_SI=n0_SI*e_charge_SI*e_charge_SI*e_charge_SI*e_charge_SI* std::log(std::sqrt(epsilon0_SI*kB_SI*T_e_SI_init/n0_SI*e_charge_SI*e_charge_SI)/(std::min(e_charge_SI*e_charge_SI/(4*M_PI*epsilon0_SI*kB_SI*T_e_SI_init),h_planck_SI/(2*M_PI*m_e_SI*std::sqrt(kB_SI*T_e_SI_init/m_e_SI)))))/ (12*M_PI*epsilon0_SI*epsilon0_SI*m_e_SI*m_e_SI*std::sqrt(kB_SI*kB_SI*kB_SI*T_e_SI_init*T_e_SI_init*T_e_SI_init/(m_e_SI*m_e_SI*m_e_SI)));
-
-
     //──────────────────────────────────────────────────────────────────────────────
     // 3) Lattice‐Unit Quantities rescaled here
     //──────────────────────────────────────────────────────────────────────────────
     // Sound‐speeds in lattice units from D2Q9 c_s^2=1/3
     const double cs2 = kB_SI * T0_SI / M0_SI * t0_SI * t0_SI / (L0_SI * L0_SI);
-    
-
+    //If we define the kimetic viscosity we are able to retrive from that the values for tau
+    //const double nu_e=7.1e10, nu_i=1.8e5, nu_n=8.3e3, 
+    //             nu_e_i=3.6e10, nu_e_n=2.1e6, nu_i_n=8.3e2;
+    //const double tau_e=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i=nu_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_n=nu_n*t0_SI/(cs2*L0_SI*L0_SI)+0.5, 
+    //             tau_e_i=nu_e_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_e_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5;
+   
     const double Kb = kB_SI* (t0_SI * t0_SI * T0_SI)/(L0_SI * L0_SI * M0_SI);
 
-    //const double nu_e=nu_e_SI*t0_SI/(L0_SI*L0_SI);
-    //const double tau_e=nu_e/cs2+0.5;
-    // Relaxation times (to be set in constructor)
+    // Otherwise we have to set values for tau based on previous knowledge
     const double tau_e = 5.0, tau_i = 3.0, tau_n = 1.0,
                  tau_e_i = 6.0, tau_e_n = 4.0,  tau_i_n = 2.0;
-
-    const double tau_Te = 5.0, tau_Ti = 3.0, tau_Tn = 1.0,
-                 tau_Te_Ti = 6.0,  tau_Te_Tn = 4.0, tau_Ti_Tn = 2.0; 
+    //Thermal tau are considered equal to the f ones
     
-    const double mu_e=1, mu_i=1, mu_n=1; //dynamic viscosity
-    const double cv_e=1, cv_i=1, cv_n=1; // specific heat 
-
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
                  Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
@@ -199,7 +161,6 @@ private:
     //──────────────────────────────────────────────────────────────────────────────
     // 4) D2Q9 Setup
     //──────────────────────────────────────────────────────────────────────────────
-    static constexpr size_t   Q = 9;
     static const std::array<int, Q> cx; // = {0,1,0,-1,0,1,-1,-1,1};
     static const std::array<int, Q> cy; // = {0,0,1,0,-1,1,1,-1,-1};
     static const std::array<double, Q> w; // weights
@@ -251,13 +212,7 @@ private:
     //──────────────────────────────────────────────────────────────────────────────
     // 6) Private Methods
     //──────────────────────────────────────────────────────────────────────────────
-    //Overload function to recover the index
-    inline size_t INDEX(size_t x, size_t y, size_t i) const {
-        return i + Q * (x + NX * y);
-    }
-    inline size_t INDEX(size_t x, size_t y) const {
-        return x + NX * y;
-    }
+    
 
 
     // Helper: create legend panel (JET colormap)
@@ -295,7 +250,7 @@ private:
     void Initialize();
 
     // (b) Compute equilibrium f_eq for given (ρ, u) and c_s^2
-    void computeEquilibrium();
+    void ComputeEquilibrium();
     
     // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F
     void UpdateMacro();
@@ -305,13 +260,6 @@ private:
     
     void ThermalCollisions();
 
-    // (f) Streaming step, which calls one of:
-    void Streaming();
-    void Streaming_Periodic();
-    void Streaming_BounceBack();
-
-    void ThermalStreaming_Periodic();
-    void ThermalStreaming_BounceBack();
 
     // (g) Poisson solvers:
     void SolvePoisson();
@@ -320,30 +268,61 @@ private:
     void SolvePoisson_SOR(); // Successive Over‑Relaxation
     void SolvePoisson_SOR_Periodic();
     void SolvePoisson_fft();
-
+    void SolvePoisson_9point();
     void SolvePoisson_9point_Periodic();
-    void SolvePoisson_Multigrid_Periodic();
-    //add multigrid method
 
     // Visualization function to see the movement in OpenCV.
     void VisualizationDensity();
     void VisualizationVelocity();
     void VisualizationTemperature();
 
-    // (h) Compute equilibrium distributions for both species (called inside Collisions)
-    // (i) Compute new E from φ (called inside SolvePoisson)
+    
+    // Functions to plot grahps of values
+    void InitTimeSeries();
+    void RecordTimeSeriesStep(size_t t);
+    void FinalizeTimeSeriesPlots();
 
-    // Funzione di utilità per disegnare il plot di un CSV in un PNG
-    void PlotCSVWithOpenCV(const std::string& csv_filename,
-                           const std::string& png_filename,
-                           const std::string& title);
+    // the 9 sample points
+    std::vector<std::pair<size_t,size_t>> sample_points;
+
+    // a shared time‐axis
+    std::vector<double> ts;
+
+    // for each quantity, a history[time][point]
+    std::vector<std::vector<double>> hist_ux_e,
+                                   hist_uy_e,
+                                   hist_ue_mag,
+                                   hist_ux_i,
+                                   hist_uy_i,
+                                   hist_ui_mag,
+                                   hist_ux_n,
+                                   hist_uy_n,
+                                   hist_un_mag,
+                                   hist_T_e,
+                                   hist_T_i,
+                                   hist_T_n,
+                                   hist_rho_e,
+                                   hist_rho_i,
+                                   hist_rho_n,
+                                   hist_rho_q,
+                                   hist_Ex,
+                                   hist_Ey,
+                                   hist_E_mag;
+
+    // helper to plot one set of histories
+    void PlotTimeSeriesDirect(const std::string &png_filename,
+                            const std::string &title,
+                            const std::vector<std::string> &legends,
+                            const std::vector<std::vector<double>> &data);
 
     cv::VideoWriter video_writer_density, video_writer_velocity, video_writer_temperature;
     // Global‐range trackers for visualization:
     // --- Density and charge visualization ranges
-    static constexpr double DENSITY_MIN = 0.01;
-    static constexpr double DENSITY_MAX = 1.5;
-    static constexpr double CHARGE_MIN  = 0.01;
+    static constexpr double DENSITY_E_MIN = 0.0;
+    static constexpr double DENSITY_E_MAX = 1.0;
+    static constexpr double DENSITY_I_MIN = 0.0;
+    static constexpr double DENSITY_I_MAX = 1822.0;
+    static constexpr double CHARGE_MIN  = 0.5;
     static constexpr double CHARGE_MAX  = 1.5;
 
     // --- Velocity visualization ranges
