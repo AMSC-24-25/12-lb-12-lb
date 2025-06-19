@@ -26,6 +26,9 @@ SRCS=(
   main_plasma.cpp
   plasma.cpp
   streaming.cpp
+  collisions.cpp
+  poisson.cpp
+  visualize.cpp
 )
 
 # Compiler and flags
