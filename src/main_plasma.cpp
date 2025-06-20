@@ -1,4 +1,5 @@
 #include "plasma.hpp"
+
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -19,8 +20,8 @@ int main(int argc, char* argv[]) {
     const int NSTEPS = 100; // total number of time steps
 
     // (d) Ion parameters:
-    const size_t Z_ion = 1;                   // atomic number
-    const size_t A_ion = 1;                   // mass number
+    const int Z_ion = 1;                   // atomic number
+    const int A_ion = 1;                   // mass number
     
     // (e) Physical denisty:
     const double n_e_SI_init = 1e11;  // Initial physical density [m⁻³]
