@@ -22,24 +22,18 @@ fi
 echo "Running with $NUM_CORES cores"
 
 # Source files
-SRCS=(
-  main_plasma.cpp
-  plasma.cpp
-  streaming.cpp
-  collisions.cpp
-  poisson.cpp
-  visualize.cpp
-)
+SRCS=$(find src -name '*.cpp')
 
 # Compiler and flags
 CXX=g++-10
 OPT_FLAGS="-O3 -Wall -Wextra -march=native -std=c++20 -fopenmp"
 PKG_FLAGS="$(pkg-config --cflags --libs opencv4)"
+INCLUDE_FLAGS="-Iinclude"
 EXTRA_LIBS="-lopencv_core -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs -lopencv_videoio -lfftw3 -lm"
 
 # Build
 echo "Compiling the program..."
-$CXX $OPT_FLAGS $PKG_FLAGS "${SRCS[@]}" -o simulation_exec $EXTRA_LIBS
+$CXX $OPT_FLAGS $INCLUDE_FLAGS $PKG_FLAGS $SRCS -o simulation_exec $EXTRA_LIBS
 
 
 if [ $? -ne 0 ]; then
