@@ -10,3 +10,4 @@ constexpr int Q = 9;
         return x + NX * y;
     }
 
+
