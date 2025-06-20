@@ -13,11 +13,11 @@ int main(int argc, char* argv[]) {
     //────────────────────────────────────────────────────────────────────────────
 
     // (b) Grid resolution:
-    const int NX = 200;       // # nodes in x
-    const int NY = 200;       // # nodes in y
+    const int NX = 500;       // # nodes in x
+    const int NY = 500;       // # nodes in y
 
     // (c) Number of time‐steps:
-    const int NSTEPS = 100; // total number of time steps
+    const int NSTEPS = 1000; // total number of time steps
 
     // (d) Ion parameters:
     const int Z_ion = 1;                   // atomic number
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     const double T_n_SI_init = 300;
 
     // (g) External E‐field in SI [V/m]:
-    const double Ex_SI = 100.0;     // External electric field along x [V/m]
+    const double Ex_SI = 1.0;     // External electric field along x [V/m]
     const double Ey_SI = 0.0;     // External electric field along y [V/m]
 
     // (h) Choose Poisson solver and BC type:
@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
     const auto total_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
     // Write computational details to CSV
-    std::ofstream file("simulation_time_plasma_details.csv", std::ios::app); //Append mode
+    std::ofstream file("build/simulation_time_plasma_details.csv", std::ios::app); //Append mode
     if (!file.is_open()) {
         std::cerr << "Error: Unable to open the output file." << std::endl;
         return 1;
