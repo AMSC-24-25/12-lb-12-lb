@@ -1,11 +1,7 @@
 #include "plasma.hpp"
-#include "utils.hpp"
 
 #include <cmath>
 #include <omp.h>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/videoio.hpp>
 #include <iostream>
 
 //──────────────────────────────────────────────────────────────────────────────
@@ -21,14 +17,14 @@ const std::array<double, Q> LBmethod::w = { {
 
 
 //──────────────────────────────────────────────────────────────────────────────
-//  Constructor: everything passed in SI → convert to lattice units
+//  Constructor
 //──────────────────────────────────────────────────────────────────────────────
 LBmethod::LBmethod(const int    _NSTEPS,
                    const int    _NX,
                    const int    _NY,
                    const size_t    _n_cores,
-                   const size_t    _Z_ion,
-                   const size_t    _A_ion,
+                   const int    _Z_ion,
+                   const int    _A_ion,
                    const double    _Ex_SI,
                    const double    _Ey_SI,
                    const double    _T_e_SI_init,
@@ -55,118 +51,117 @@ LBmethod::LBmethod(const int    _NSTEPS,
       poisson_type(_poisson_type),
       bc_type     (_bc_type),
       omega_sor   (_omega_sor)
-{   //The rescaling has already been done in the hpp
+{
+    //──────────────────────────────────────────────────────────────────────────────
+    //  Allocate all the vectors
+    //──────────────────────────────────────────────────────────────────────────────
+    const int size_distr = NX * NY *Q;
 
-    // 8) Allocate all vectors of size NX*NY and NX*NY*Q (for density, velocities, φ, etc.)
-    //    Also initialize the constant fields
-    //──────────────────────────────────────────────────────────────────────────────
-    //  Initialize all fields at t=0:
-    //    • densities = 1.0 (per cell), velocities = 0
-    //    • f_e = f_e^eq(ρ=1,u=0), f_i = f_i^eq(ρ=1,u=0)
-    //    • phi = 0 everywhere
-    //    • Ex, Ey = Ex_latt_init, Ey_latt_init
-    //    • ρ_q_phys = (ρ_i - ρ_e) * (e_charge_SI / dx_SI^3)  → initial net charge  (here 0)
-    //──────────────────────────────────────────────────────────────────────────────
-    f_e.assign(NX * NY * Q, 0.0);
-    f_temp_e.assign(NX * NY * Q, 0.0);
-    f_eq_e.assign(NX * NY * Q, 0.0);
-    f_i.assign(NX * NY * Q, 0.0);
-    f_temp_i.assign(NX * NY * Q, 0.0);
-    f_eq_i.assign(NX * NY * Q, 0.0);
-    f_n.assign(NX * NY * Q, 0.0);
-    f_temp_n.assign(NX * NY * Q, 0.0);
-    f_eq_n.assign(NX * NY * Q, 0.0);
+    f_e.assign(size_distr, 0.0); //in order to allow deciding initial conditions this has to be set to zero
+    f_i.assign(size_distr, 0.0); //in this way we can define the function only where we want it
+    f_n.assign(size_distr, 0.0);
     
-    f_eq_e_i.assign(NX * NY * Q, 0.0);
-    f_eq_i_e.assign(NX * NY * Q, 0.0);
-    f_eq_e_n.assign(NX * NY * Q, 0.0);
-    f_eq_n_e.assign(NX * NY * Q, 0.0);
-    f_eq_i_n.assign(NX * NY * Q, 0.0);
-    f_eq_n_i.assign(NX * NY * Q, 0.0);
+    f_eq_e.resize(size_distr);
+    f_eq_i.resize(size_distr);
+    f_eq_n.resize(size_distr);
+    
+    f_eq_e_i.resize(size_distr);
+    f_eq_i_e.resize(size_distr);
+    f_eq_e_n.resize(size_distr);
+    f_eq_n_e.resize(size_distr);
+    f_eq_i_n.resize(size_distr);
+    f_eq_n_i.resize(size_distr);
 
-    g_e.assign(NX * NY * Q, 0.0);
-    g_i.assign(NX * NY * Q, 0.0);
-    g_n.assign(NX * NY * Q, 0.0);
-    g_eq_e.assign(NX * NY * Q, 0.0);
-    g_eq_i.assign(NX * NY * Q, 0.0);
-    g_eq_n.assign(NX * NY * Q, 0.0);
-    g_temp_e.assign(NX * NY * Q, 0.0);
-    g_temp_i.assign(NX * NY * Q, 0.0);
-    g_temp_n.assign(NX * NY * Q, 0.0);
+    g_e.assign(size_distr, 0.0);
+    g_i.assign(size_distr, 0.0);
+    g_n.assign(size_distr, 0.0);
 
-    g_eq_e_i.assign(NX * NY * Q, 0.0);
-    g_eq_i_e.assign(NX * NY * Q, 0.0);
-    g_eq_e_n.assign(NX * NY * Q, 0.0);
-    g_eq_n_e.assign(NX * NY * Q, 0.0);
-    g_eq_i_n.assign(NX * NY * Q, 0.0);
-    g_eq_n_i.assign(NX * NY * Q, 0.0);
+    g_eq_e.resize(size_distr);
+    g_eq_i.resize(size_distr);
+    g_eq_n.resize(size_distr);
 
-    rho_e.assign(NX * NY, 0.0);
-    rho_i.assign(NX * NY, 0.0);
-    rho_n.assign(NX * NY, 0.0);
-    ux_e.assign(NX * NY, 0.0);
-    uy_e.assign(NX * NY, 0.0);
-    ux_i.assign(NX * NY, 0.0);
-    uy_i.assign(NX * NY, 0.0);
-    ux_n.assign(NX * NY, 0.0);
-    uy_n.assign(NX * NY, 0.0);
-    ux_e_i.assign(NX * NY, 0.0);
-    uy_e_i.assign(NX * NY, 0.0);
-    ux_e_n.assign(NX * NY, 0.0);
-    uy_e_n.assign(NX * NY, 0.0);
-    ux_i_n.assign(NX * NY, 0.0);
-    uy_i_n.assign(NX * NY, 0.0);
+    g_eq_e_i.resize(size_distr);
+    g_eq_i_e.resize(size_distr);
+    g_eq_e_n.resize(size_distr);
+    g_eq_n_e.resize(size_distr);
+    g_eq_i_n.resize(size_distr);
+    g_eq_n_i.resize(size_distr);
 
-    T_e.assign(NX * NY, 0.0);
-    T_i.assign(NX * NY, 0.0);
-    T_n.assign(NX * NY, 0.0);
+    temp_e.resize(size_distr);
+    temp_i.resize(size_distr);
+    temp_n.resize(size_distr);
 
-    phi.assign(NX * NY, 0.0);
-    phi_new.assign(NX * NY, 0.0);
-    Ex.assign(NX * NY, Ex_ext);
-    Ey.assign(NX * NY, Ey_ext);
+    const int size_macro = NX * NY;
 
-    // In lattice units, store ρ_q_latt = (ρ_i - ρ_e) * 1.0  (just #/cell difference)
-    rho_q.assign(NX * NY, 0.0); //Should be rho_q_latt[idx] = (n_i[idx] - n_e[idx]) * q_0;
+    rho_e.resize(size_macro);
+    rho_i.resize(size_macro);
+    rho_n.resize(size_macro);
+    ux_e.resize(size_macro);
+    uy_e.resize(size_macro);
+    ux_i.resize(size_macro);
+    uy_i.resize(size_macro);
+    ux_n.resize(size_macro);
+    uy_n.resize(size_macro);
+    ux_e_i.resize(size_macro);
+    uy_e_i.resize(size_macro);
+    ux_e_n.resize(size_macro);
+    uy_e_n.resize(size_macro);
+    ux_i_n.resize(size_macro);
+    uy_i_n.resize(size_macro);
 
-    // 9) Initialize fields:  set f = w * m
+    T_e.resize(size_macro);
+    T_i.resize(size_macro);
+    T_n.resize(size_macro);
+    // Pulsed initial eleectric field
+    Ex.assign(size_macro, Ex_ext);
+    Ey.assign(size_macro, Ey_ext);
+
+    // In lattice units
+    rho_q.resize(size_macro);
+
+    // Initialize fields:  set f = w * m and g = w * T
     Initialize();
 }
 
 //──────────────────────────────────────────────────────────────────────────────
-//  Initialize all fields at t=0:
-//    • densities = 1.0 (per cell), velocities = 0
-//    • f_e = f_e^eq(ρ=1,u=0), f_i = f_i^eq(ρ=1,u=0)
-//    • g_e = g_e^eq = w * T_e, g_i = g_i^eq = w * T_i
-//    • phi = 0 everywhere
-//    • Ex, Ey = Ex_latt_init, Ey_latt_init
-//    • ρ_q_phys = (ρ_i - ρ_e) * (e_charge_SI / dx_SI^3)  → initial net charge  (here 0)
+//  Impose initial conditions chosen
+//  No need to initialize the macroscopic quantities 
+//  since UpdateMacro will do the work
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::Initialize() {
-    // Initialize f=f_eq=weight at (ρ=1, u=0)
+    // Assign electrons andd ions only in the center
+    #pragma omp parallel for collapse(3) schedule(static)
+    for (int x = (NX/4)+1; x <(3*NX/4); ++x) {
+        for(int y = (NY/4)+1; y <(3*NY/4); ++y){
+            for (int i=0;i<Q;++i){
+                const int idx_3 = INDEX(x, y, i,NX,Q);
+                const double weight = w[i];
+                f_e[idx_3] =  weight * rho_e_init; // Equilibrium function for electrons
+                g_e[idx_3] =  weight * T_e_init; // Thermal function for electrons
+                f_i[idx_3] =  weight * rho_i_init; // Equilibrium function for ions
+                g_i[idx_3] =  weight * T_i_init; // Thermal function for ions
+            }
+        }
+    }
+    //Assign the neutrals to all the zone
     #pragma omp parallel for collapse(3) schedule(static)
     for (int x = 0; x < NX; ++x) {
         for(int y = 0; y < NY; ++y){
             for (int i=0;i<Q;++i){
                 const int idx_3 = INDEX(x, y, i,NX,Q);
-
-                if (x<(3*NX/4) && x>(NX/4) && y<(3*NY/4) && y>(1*NY/4)){
-                    f_e[idx_3] = w[i] * rho_e_init; // Equilibrium function for electrons
-                    g_e[idx_3] = w[i] * T_e_init; // Thermal function for electrons
-                    f_i[idx_3] = w[i] * rho_i_init; // Equilibrium function for ions
-                    g_i[idx_3] = w[i] * T_i_init; // Thermal function for ions
-                }
-                f_n[idx_3] = w[i] * rho_n_init;
-                g_n[idx_3] = w[i] * T_n_init;
+                const double weight = w[i];
+                f_n[idx_3] =  weight * rho_n_init;
+                g_n[idx_3] =  weight * T_n_init;
             }
         }
     }
 }
 //──────────────────────────────────────────────────────────────────────────────
-//  Compute D2Q9 equilibrium for a given (ρ, ux, uy, T) and sound‐speed cs2.
+//  Compute D2Q9 equilibrium for f_eq and g_eq
 //──────────────────────────────────────────────────────────────────────────────
-void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe can be used as a function
-    // Compute the equilibrium distribution function f_eq
+void LBmethod::ComputeEquilibrium() {
+    // Compute the equilibrium distribution functions
+    const double invcs2=1.0/cs2;
     #pragma omp parallel for collapse(2) schedule(static)
         for (int x = 0; x < NX; ++x) {
             for (int y = 0; y < NY; ++y) {
@@ -180,7 +175,11 @@ void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe 
                 const double den_e = rho_e[idx]; // Electron density
                 const double den_i = rho_i[idx]; // Ion density
                 const double den_n = rho_n[idx]; // Neutrals density
+                const double Te = T_e[idx]; //Electron temperature
+                const double Ti = T_i[idx]; //Ion temperature
+                const double Tn = T_n[idx]; //Neutrals temperature
                 
+
                 for (int i = 0; i < Q; ++i) {
                     const int idx_3=INDEX(x, y, i,NX,Q);
                     const double cu_e = cx[i]*ux_e[idx] +cy[i]*uy_e[idx]; // Dot product (c_i · u)
@@ -189,122 +188,125 @@ void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe 
                     const double cu_e_i = cx[i]*ux_e_i[idx] +cy[i]*uy_e_i[idx]; // Dot product (c_i · u) for electron-ion interaction
                     const double cu_e_n = cx[i]*ux_e_n[idx] +cy[i]*uy_e_n[idx];
                     const double cu_i_n = cx[i]*ux_i_n[idx] +cy[i]*uy_i_n[idx];
+                    const double weight = w[i];
+
 
                     // Compute f_eq from discretization of Maxwell Boltzmann distribution function
-                    f_eq_e[idx_3]= w[i]*den_e*(
+                    f_eq_e[idx_3]= weight*den_e*(
                         1.0 +
-                        (cu_e / cs2) +
-                        (cu_e * cu_e) / (2.0 * cs2 * cs2) -
-                        u2_e / (2.0 * cs2)
+                        (cu_e) *invcs2+
+                        (cu_e * cu_e) * 0.5 *invcs2 *invcs2-
+                        u2_e * 0.5*invcs2
                     );
-                    f_eq_i[idx_3]= w[i]*den_i*(
+                    f_eq_i[idx_3]= weight*den_i*(
                         1.0 +
-                        (cu_i / cs2) +
-                        (cu_i * cu_i) / (2.0 * cs2 * cs2) -
-                        u2_i / (2.0 * cs2)
+                        (cu_i) *invcs2+
+                        (cu_i * cu_i) * 0.5 *invcs2*invcs2 -
+                        u2_i * 0.5*invcs2
                     );
-                    f_eq_n[idx_3]= w[i]*den_n*(
+                    f_eq_n[idx_3]= weight*den_n*(
                         1.0 +
-                        (cu_n / cs2) +
-                        (cu_n * cu_n) / (2.0 * cs2 * cs2) -
-                        u2_n / (2.0 * cs2)
-                    );
-
-                    f_eq_e_i[idx_3]= w[i]*den_e*(
-                        1.0 +
-                        (cu_e_i / cs2) +
-                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
-                        u2_e_i / (2.0 * cs2)
-                    );
-                    f_eq_i_e[idx_3]= w[i]*den_i*(
-                        1.0 +
-                        (cu_e_i / cs2) +
-                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
-                        u2_e_i / (2.0 * cs2)
-                    );
-                    f_eq_e_n[idx_3]= w[i]*den_e*(
-                        1.0 +
-                        (cu_e_n / cs2) +
-                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
-                        u2_e_n / (2.0 * cs2)
-                    );
-                    f_eq_n_e[idx_3]= w[i]*den_n*(
-                        1.0 +
-                        (cu_e_n / cs2) +
-                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
-                        u2_e_n / (2.0 * cs2)
-                    );
-                    f_eq_i_n[idx_3]= w[i]*den_i*(
-                        1.0 +
-                        (cu_i_n / cs2) +
-                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
-                        u2_i_n / (2.0 * cs2)
-                    );
-                    f_eq_n_i[idx_3]= w[i]*den_n*(
-                        1.0 +
-                        (cu_i_n / cs2) +
-                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
-                        u2_i_n / (2.0 * cs2)
+                        (cu_n)*invcs2 +
+                        (cu_n * cu_n) * 0.5 *invcs2*invcs2 -
+                        u2_n * 0.5*invcs2
                     );
 
-                    g_eq_e[idx_3]=w[i]*T_e[idx]*(
+                    f_eq_e_i[idx_3]= weight*den_e*(
                         1.0 +
-                        (cu_e / cs2) +
-                        (cu_e * cu_e ) / (2.0 * cs2 *cs2) -
-                        u2_e / (2.0 * cs2)
+                        (cu_e_i)*invcs2 +
+                        (cu_e_i * cu_e_i) * 0.5 *invcs2*invcs2 -
+                        u2_e_i * 0.5*invcs2
                     );
-                    g_eq_i[idx_3]=w[i]*T_i[idx]*(
+                    f_eq_i_e[idx_3]= weight*den_i*(
                         1.0 +
-                        (cu_i / cs2) +
-                        (cu_i * cu_i ) / (2.0 * cs2 *cs2) -
-                        u2_i / (2.0 * cs2)
+                        (cu_e_i)*invcs2 +
+                        (cu_e_i * cu_e_i) * 0.5 *invcs2*invcs2 -
+                        u2_e_i * 0.5*invcs2
                     );
-                    g_eq_n[idx_3]=w[i]*T_n[idx]*(
+                    f_eq_e_n[idx_3]= weight*den_e*(
                         1.0 +
-                        (cu_n / cs2) +
-                        (cu_n * cu_n ) / (2.0 * cs2 *cs2) -
-                        u2_n / (2.0 * cs2)
+                        (cu_e_n) *invcs2+
+                        (cu_e_n * cu_e_n) * 0.5 *invcs2*invcs2 -
+                        u2_e_n * 0.5*invcs2
                     );
-                    g_eq_e_i[idx_3]= w[i]*T_e[idx]*(
+                    f_eq_n_e[idx_3]= weight*den_n*(
                         1.0 +
-                        (cu_e_i / cs2) +
-                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
-                        u2_e_i / (2.0 * cs2)
+                        (cu_e_n)*invcs2 +
+                        (cu_e_n * cu_e_n) * 0.5 *invcs2*invcs2 -
+                        u2_e_n * 0.5 *invcs2
                     );
-                    g_eq_i_e[idx_3]= w[i]*T_i[idx]*(
+                    f_eq_i_n[idx_3]= weight*den_i*(
                         1.0 +
-                        (cu_e_i / cs2) +
-                        (cu_e_i * cu_e_i) / (2.0 * cs2 * cs2) -
-                        u2_e_i / (2.0 * cs2)
+                        (cu_i_n) *invcs2+
+                        (cu_i_n * cu_i_n) * 0.5 *invcs2 *invcs2-
+                        u2_i_n * 0.5 *invcs2
                     );
-                    g_eq_e_n[idx_3]= w[i]*T_e[idx]*(
+                    f_eq_n_i[idx_3]= weight*den_n*(
                         1.0 +
-                        (cu_e_n / cs2) +
-                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
-                        u2_e_n / (2.0 * cs2)
+                        (cu_i_n)*invcs2 +
+                        (cu_i_n * cu_i_n) * 0.5 *invcs2*invcs2 -
+                        u2_i_n * 0.5*invcs2
                     );
-                    g_eq_n_e[idx_3]= w[i]*T_n[idx]*(
+
+                    g_eq_e[idx_3]=weight*Te*(
                         1.0 +
-                        (cu_e_n / cs2) +
-                        (cu_e_n * cu_e_n) / (2.0 * cs2 * cs2) -
-                        u2_e_n / (2.0 * cs2)
+                        (cu_e)*invcs2 +
+                        (cu_e * cu_e ) * 0.5 *invcs2*invcs2 -
+                        u2_e * 0.5*invcs2
                     );
-                    g_eq_i_n[idx_3]= w[i]*T_i[idx]*(
+                    g_eq_i[idx_3]=weight*Ti*(
                         1.0 +
-                        (cu_i_n / cs2) +
-                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
-                        u2_i_n / (2.0 * cs2)
+                        (cu_i)*invcs2 +
+                        (cu_i * cu_i ) * 0.5 *invcs2 *invcs2 -
+                        u2_i * 0.5*invcs2
                     );
-                    g_eq_n_i[idx_3]= w[i]*T_n[idx]*(
+                    g_eq_n[idx_3]=weight*Tn*(
                         1.0 +
-                        (cu_i_n / cs2) +
-                        (cu_i_n * cu_i_n) / (2.0 * cs2 * cs2) -
-                        u2_i_n / (2.0 * cs2)
+                        (cu_n)*invcs2 +
+                        (cu_n * cu_n ) * 0.5 *invcs2 *invcs2-
+                        u2_n * 0.5*invcs2
+                    );
+                    g_eq_e_i[idx_3]= weight*Te*(
+                        1.0 +
+                        (cu_e_i)*invcs2 +
+                        (cu_e_i * cu_e_i) * 0.5 *invcs2 *invcs2 -
+                        u2_e_i * 0.5 *invcs2
+                    );
+                    g_eq_i_e[idx_3]= weight*Ti*(
+                        1.0 +
+                        (cu_e_i) *invcs2+
+                        (cu_e_i * cu_e_i) * 0.5 *invcs2 *invcs2-
+                        u2_e_i * 0.5 *invcs2
+                    );
+                    g_eq_e_n[idx_3]= weight*Te*(
+                        1.0 +
+                        (cu_e_n) *invcs2+
+                        (cu_e_n * cu_e_n) * 0.5 *invcs2 *invcs2-
+                        u2_e_n * 0.5 *invcs2
+                    );
+                    g_eq_n_e[idx_3]= weight*Tn*(
+                        1.0 +
+                        (cu_e_n)*invcs2 +
+                        (cu_e_n * cu_e_n) * 0.5 *invcs2 *invcs2 -
+                        u2_e_n * 0.5 *invcs2
+                    );
+                    g_eq_i_n[idx_3]= weight*Ti*(
+                        1.0 +
+                        (cu_i_n)*invcs2 +
+                        (cu_i_n * cu_i_n) * 0.5 *invcs2 *invcs2-
+                        u2_i_n * 0.5*invcs2
+                    );
+                    g_eq_n_i[idx_3]= weight*Tn*(
+                        1.0 +
+                        (cu_i_n)*invcs2 +
+                        (cu_i_n * cu_i_n) * 0.5 *invcs2*invcs2 -
+                        u2_i_n * 0.5 *invcs2
                     );
                 }
             }
         }
 }
+
 //──────────────────────────────────────────────────────────────────────────────
 //  Update macroscopic variables for both species:
 //    ρ = Σ_i f_i,
@@ -313,8 +315,6 @@ void LBmethod::ComputeEquilibrium() {//It's the same for all the species, maybe 
 //    T = Σ_i g_i
 //──────────────────────────────────────────────────────────────────────────────
 void LBmethod::UpdateMacro() {
-    //Find a way to evaluete the temperature I don't know how to do it
-    //maybe from another distribution function g that has to be imposed and solved
     double rho_loc_e = 0.0;
     double ux_loc_e = 0.0;
     double uy_loc_e = 0.0;
@@ -377,7 +377,7 @@ void LBmethod::UpdateMacro() {
                     T_e[idx] = 0.0;
                 } else{
                     rho_e[idx] = rho_loc_e;
-                    if(ux_loc_e==rho_loc_e || ux_loc_e==-rho_loc_e)
+                    if(ux_loc_e==rho_loc_e || ux_loc_e==-rho_loc_e) // In order to avoid exiting conditions of the model when the initial streaming is performed
                         ux_e[idx]=0.0;
                     else
                         ux_e[idx] = ux_loc_e / rho_loc_e;
@@ -448,12 +448,13 @@ void LBmethod::UpdateMacro() {
                     uy_i_n[idx] = (rho_loc_i * uy_i[idx] + rho_loc_n * uy_n[idx]) / (rho_loc_i + rho_loc_n);
                 }
                 
-                // Lattice‐unit charge density (#/cell difference):
+                // Lattice‐unit charge density:
                 rho_q[idx] = (q_i * rho_i[idx] / m_i + q_e * rho_e[idx] / m_e);
                 if(rho_q[idx]<1e-15)    rho_q[idx]=0.0; //correct for machine error
             }
         }
 }
+
 
 void LBmethod::Run_simulation() {
     
@@ -490,14 +491,14 @@ void LBmethod::Run_simulation() {
                             Ex, Ey,
                             q_e, q_i,
                             m_e, m_i,
-                            f_temp_e, f_temp_i, f_temp_n,
+                            temp_e, temp_i, temp_n,
                             cx, cy, w,
                             NX, NY, Kb, cs2); 
 
         // f(x+cx,y+cx,t+1)=f(x,y,t)
         // +BC applyed
         streaming::Stream(f_e, f_i, f_n, 
-                          f_temp_e, f_temp_i, f_temp_n,
+                          temp_e, temp_i, temp_n,
                           g_e, g_i, g_n,
                           cx, cy,
                           NX, NY, bc_type);
