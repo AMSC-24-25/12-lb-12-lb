@@ -4,9 +4,8 @@
 #include "utils.hpp"
 
 #include <vector>
-#include <utility>
-#include <fstream>
 #include <string>
+#include <filesystem>
 
 #include <opencv2/opencv.hpp>
 
@@ -70,9 +69,8 @@ void CloseVisualization();
 //---------------------------------------------------------------------------
 
 // Plot one 2D time-series buffer into a PNG image using OpenCV
-void PlotTimeSeriesWithOpenCV(const std::vector<std::array<double,P>>& data,
-                              const std::string& title,
-                              const std::string& png_filename);
+cv::Mat PlotTimeSeriesWithOpenCV(const std::vector<std::array<double,P>>& data,
+                                 const std::string& title);
 //---------------------------------------------------------------------------
 // Visualization routines
 //---------------------------------------------------------------------------
