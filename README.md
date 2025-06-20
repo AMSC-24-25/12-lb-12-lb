@@ -25,7 +25,6 @@ If we get something like "4.6.0", then we're okay.
 
 ## Runnning
 In order to run the code we need these lines: <br /> <br />
-cd code <br />
 chmod +x compile_and_run.sh <br />
 ./compile_and_run.sh <number_of_cores> <br />
 <br />
