@@ -33,7 +33,7 @@ cv::VideoWriter video_writer_density,
 
 constexpr double DENSITY_E_MIN = 0.0,    DENSITY_E_MAX = 1.0;
 constexpr double DENSITY_I_MIN = 0.0,    DENSITY_I_MAX = 1822.0;
-constexpr double CHARGE_MIN    = 0.5,    CHARGE_MAX    = 1.5;
+constexpr double CHARGE_MIN    = 0.0,    CHARGE_MAX    = 1.5;
 
 constexpr double UX_E_MIN = -1e-7, UX_E_MAX = 1e-7;
 constexpr double UY_E_MIN = -1e-7, UY_E_MAX = 1e-7;
@@ -43,9 +43,9 @@ constexpr double UX_I_MIN = -1e-7, UX_I_MAX = 1e-7;
 constexpr double UY_I_MIN = -1e-7, UY_I_MAX = 1e-7;
 constexpr double UI_MAG_MIN = 0.0, UI_MAG_MAX = 1e-7;
 
-constexpr double TEMP_E_MIN = 0.3, TEMP_E_MAX = 1.0;
-constexpr double TEMP_I_MIN = 0.1, TEMP_I_MAX = 0.5;
-constexpr double TEMP_N_MIN = 0.1, TEMP_N_MAX = 0.5;
+constexpr double TEMP_E_MIN = 0.0, TEMP_E_MAX = 1.0;
+constexpr double TEMP_I_MIN = 0.0, TEMP_I_MAX = 0.5;
+constexpr double TEMP_N_MIN = 0.0, TEMP_N_MAX = 0.5;
 
 // --- Global parameters for video ---
 constexpr int border        = 10;
