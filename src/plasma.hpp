@@ -1,30 +1,13 @@
 #pragma once
 
-#include "utils.hpp"
-#include "streaming.hpp"
 #include "collisions.hpp"
 #include "poisson.hpp"
+#include "streaming.hpp"
+#include "utils.hpp"
 #include "visualize.hpp"
 
-
-#include <vector>
 #include <array>
-#include <utility>
-#include <string>
-#include <opencv2/opencv.hpp>
-#include <opencv2/core.hpp>        
-#include <opencv2/imgproc.hpp>   
-#include <opencv2/highgui.hpp> 
-#include <opencv2/videoio.hpp> 
-#include <filesystem>
-#include <fftw3.h>
-#include <omp.h>
-#include <cmath>
-#include <sstream>
-#include <iomanip>
-#include <fstream>
-#include <sstream>
-
+#include <vector>
 
 //--------------------------------------------------------------------------------
 // LBmethod: performs a two‐species (electron + ion) D2Q9 LBM under an electric field.
@@ -52,8 +35,8 @@ public:
              const int    NX,
              const int    NY,
              const size_t    n_cores,
-             const size_t    Z_ion,
-             const size_t    A_ion,
+             const int    Z_ion,
+             const int    A_ion,
              const double    Ex_SI,
              const double    Ey_SI,
              const double    T_e_SI_init,
@@ -65,7 +48,7 @@ public:
              const streaming::BCType      bc_type,
              const double    omega_sor);
 
-    // Run the complete simulation (calls Initialize(), then loops on TimeSteps)
+    // Run the complete simulation
     void Run_simulation();
 
 
@@ -76,8 +59,8 @@ private:
     const int  NSTEPS;       // total number of time steps
     const int  NX, NY;       // grid dimensions
     const size_t  n_cores;      // # of OpenMP threads (optional)
-    const size_t  Z_ion;        // ionic atomic number (e.g. Z=1 for H+)
-    const size_t  A_ion;        // ionic mass # (e.g. A=1 for H+)
+    const int  Z_ion;        // ionic atomic number (e.g. Z=1 for H+)
+    const int  A_ion;        // ionic mass # (e.g. A=1 for H+)
     const double    Ex_SI;
     const double    Ey_SI;
     const double    T_e_SI_init;
@@ -98,20 +81,21 @@ private:
     static constexpr double m_e_SI      = 9.10938356e-31; // [kg]
     static constexpr double u_SI        = 1.66053906660e-27; // [kg]
     static constexpr double m_p_SI      = 1.67262192595e-27; // [kg]
-    static constexpr double m_ne_SI      = 1.67492749804e-27; // [kg]
+    static constexpr double m_ne_SI     = 1.67492749804e-27; // [kg]
 
     const double m_i_SI = A_ion * u_SI; //[kg]
     const double m_n_SI = A_ion * u_SI; //[kg]
     //──────────────────────────────────────────────────────────────────────────────
-    // Physical conversion quantities from SI to LU:
+    // Conversion of quantities from SI to LU:
     //──────────────────────────────────────────────────────────────────────────────
     const double n0_SI = n_e_SI_init;
 
     const double M0_SI = m_e_SI; // physical mass [kg]
     const double T0_SI = T_e_SI_init; // physical temperature [K]
     const double Q0_SI = e_charge_SI; // physical charge [C]
-    const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI))*1e-2; // physical lenght = lambda_D [m]
-    const double t0_SI = std::sqrt(epsilon0_SI * M0_SI / (3.0 * n0_SI * Q0_SI * Q0_SI))  *1e-2; // physical time = rad(3)/w_p [s]
+    const double L0_SI = std::sqrt(epsilon0_SI * kB_SI * T0_SI / (n0_SI * Q0_SI * Q0_SI))*1e-2; // physical lenght = lambda_D/100 [m]
+    const double t0_SI = std::sqrt(epsilon0_SI * M0_SI / (3.0 * n0_SI * Q0_SI * Q0_SI))  *1e-2; // physical time = rad(3)/w_p/100 [s]
+    
     //other useful obtained scaling quantities
     const double E0_SI = M0_SI*L0_SI/(Q0_SI*t0_SI*t0_SI); // physical electric field [V/m]
     const double v0_SI = L0_SI / t0_SI; // physical velocity [m/s]
@@ -122,17 +106,12 @@ private:
     //──────────────────────────────────────────────────────────────────────────────
     // Sound‐speeds in lattice units from D2Q9 c_s^2=1/3
     const double cs2 = kB_SI * T0_SI / M0_SI * t0_SI * t0_SI / (L0_SI * L0_SI);
-    //If we define the kimetic viscosity we are able to retrive from that the values for tau
-    //const double nu_e=7.1e10, nu_i=1.8e5, nu_n=8.3e3, 
-    //             nu_e_i=3.6e10, nu_e_n=2.1e6, nu_i_n=8.3e2;
-    //const double tau_e=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i=nu_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_n=nu_n*t0_SI/(cs2*L0_SI*L0_SI)+0.5, 
-    //             tau_e_i=nu_e_i*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_e_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5, tau_i_n=nu_e*t0_SI/(cs2*L0_SI*L0_SI)+0.5;
-   
+ 
     const double Kb = kB_SI* (t0_SI * t0_SI * T0_SI)/(L0_SI * L0_SI * M0_SI);
     
     // Converted E‐field in lattice units:
     const double Ex_ext = Ex_SI / E0_SI, 
-                 Ey_ext = Ey_SI / E0_SI; // external E‐field in lattice units
+                 Ey_ext = Ey_SI / E0_SI; // external intial E‐field in lattice units
 
     // Converted temperatures in lattice units:
     const double T_e_init = T_e_SI_init / T0_SI, 
@@ -141,8 +120,8 @@ private:
 
     // mass in lattice units:
     const double m_e = m_e_SI / M0_SI, // electron mass in lattice units
-                 m_i = m_i_SI / M0_SI, // ion mass in electron masses (for convenience)
-                 m_n = m_n_SI / M0_SI;
+                 m_i = m_i_SI / M0_SI, // ion mass in lattice masses
+                 m_n = m_n_SI / M0_SI; // neutrals mass in lattice units
 
     // Converted charge in lattice units:
     const double q_e = - e_charge_SI / Q0_SI; // electron charge in lattice units
@@ -150,8 +129,8 @@ private:
 
     // Initial density in lattice unit
     const double rho_e_init = m_e * n_e_SI_init / n0_SI, // electron density in lattice units
-                 rho_i_init = m_i * n_e_SI_init / n0_SI / Z_ion, // ion density in lattice units. The idea behind /Z_ion is the quasi neutrality of the plamsa at the start
-                 rho_n_init = m_n * n_n_SI_init / n0_SI;
+                 rho_i_init = m_i * n_e_SI_init / n0_SI / Z_ion, // ion density in lattice units. The idea behind /Z_ion is overall neutrality of the plamsa at the start
+                 rho_n_init = m_n * n_n_SI_init / n0_SI; // neutrals density in lattice units
     //──────────────────────────────────────────────────────────────────────────────
     // 4) D2Q9 Setup
     //──────────────────────────────────────────────────────────────────────────────
@@ -163,9 +142,7 @@ private:
     // 5) Per‐Node (“lattice‐unit”) Fields
     //──────────────────────────────────────────────────────────────────────────────
     // Distribution functions: f_e[i + Q*(x + NX*y)], f_i[i + Q*(x + NX*y)]
-    std::vector<double>   f_e,    f_temp_e,
-                          f_i,    f_temp_i,
-                          f_n,    f_temp_n;
+    std::vector<double>   f_e,    f_i,    f_n;    
     // Equilibrium distribution functions
     std::vector<double>   f_eq_e,    f_eq_i,    f_eq_n,   
                           f_eq_e_i,  f_eq_i_e,
@@ -173,14 +150,15 @@ private:
                           f_eq_i_n,  f_eq_n_i;
                          
     // Thermal distribution function
-    std::vector<double>   g_e,    g_temp_e,
-                          g_i,    g_temp_i,
-                          g_n,    g_temp_n;
+    std::vector<double>   g_e,    g_i,    g_n;   
     // Equilibrium distribution functions
     std::vector<double>   g_eq_e,    g_eq_i,    g_eq_n,
                           g_eq_e_i,  g_eq_i_e,
                           g_eq_e_n,  g_eq_n_e,
                           g_eq_i_n,  g_eq_n_i;
+    
+    // Themporal distribution functions
+    std::vector<double> temp_e, temp_i, temp_n;
 
     // Macroscopic moments (per cell)
     std::vector<double>   rho_e,  rho_i, rho_n;      // densities
@@ -192,10 +170,9 @@ private:
                           ux_i_n, uy_i_n;
     
     // Temperature vectors
-    std::vector<double>  T_e,  T_i, T_n;
+    std::vector<double>  T_e,  T_i,  T_n;
 
-    // Electric potential & fields (per cell), in lattice units
-    std::vector<double>   phi,   phi_new;
+    // Electric potential in lattice units
     std::vector<double>   Ex,    Ey;         // self‐consistent E (overwrites Ex_latt_init)
 
     // Charge density (per cell in lattice units)
@@ -213,6 +190,5 @@ private:
     
     // (d) Macroscopic update:  ρ = Σ_i f_i,   ρ u = Σ_i f_i c_i + ½ F  T=Σ_i g_i
     void UpdateMacro();
-
-    
+  
 };
