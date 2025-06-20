@@ -6,7 +6,6 @@
 
 namespace poisson {
 
-// Memoria persistente interna
 static std::vector<double> phi;
 static std::once_flag poisson_init_flag, fftw_init_flag;
 
@@ -41,7 +40,7 @@ void SolvePoisson(
         }
     });
     // If Poisson not solved return
-    if (type == PoissonType::NONE) return; //We preferi it here because the compiler optimize it better
+    if (type == PoissonType::NONE) return; //We prefer it here because the compiler optimize it better
                                            //An alternative position is inside the swithc as default
     // Dispatcher based on Poisson Solver and BC
     if(bc_type==streaming::BCType::Periodic){
