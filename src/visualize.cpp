@@ -71,6 +71,8 @@ constexpr int frame_h_temperature = tile_h;//+NY
 //---------------------------------------------------------------------------
 
 void InitVisualization(const int NX, const int NY, const int T) {
+    std::filesystem::create_directories("build/video");
+    std::filesystem::create_directories("build/graphs");
 
     // Define sample points: center + 8 around
     const int cx = NX/2, cy = NY/2, dx = NX/4, dy = NY/4;
@@ -106,7 +108,7 @@ void InitVisualization(const int NX, const int NY, const int T) {
 
     // Density
     video_writer_density.open(
-        "video_density.mp4",
+        "build/video/video_density.mp4",
         cv::VideoWriter::fourcc('m','p','4','v'),
         fps,
         cv::Size(frame_w_density+3*NX, frame_h_density+NY),
@@ -119,7 +121,7 @@ void InitVisualization(const int NX, const int NY, const int T) {
 
     // Velocity
     video_writer_velocity.open(
-        "video_velocity.mp4",
+        "build/video/video_velocity.mp4",
         cv::VideoWriter::fourcc('m','p','4','v'),
         fps,
         cv::Size(frame_w_velocity+3*NX, frame_h_velocity+2*NY),
@@ -132,7 +134,7 @@ void InitVisualization(const int NX, const int NY, const int T) {
 
     // Temperature
     video_writer_temperature.open(
-        "video_temperature.mp4",
+        "build/video/video_temperature.mp4",
         cv::VideoWriter::fourcc('m','p','4','v'),
         fps,
         cv::Size(frame_w_temperature+3*NX, frame_h_temperature+NY),
@@ -334,26 +336,36 @@ cv::Mat wrap_with_label(const cv::Mat& img, const std::string& label) { //starti
 //---------------------------------------------------------------------------
 
 void CloseVisualization() {
-    // 1) Plot all in-memory time series
-    PlotTimeSeriesWithOpenCV(ts_ux_e,  "ux_e",   "plot_ux_e.png");
-    PlotTimeSeriesWithOpenCV(ts_uy_e,  "uy_e",   "plot_uy_e.png");
-    PlotTimeSeriesWithOpenCV(ts_ue_mag,"|u_e|", "plot_ue_mag.png");
-    PlotTimeSeriesWithOpenCV(ts_ux_i,  "ux_i",   "plot_ux_i.png");
-    PlotTimeSeriesWithOpenCV(ts_uy_i,  "uy_i",   "plot_uy_i.png");
-    PlotTimeSeriesWithOpenCV(ts_ui_mag,"|u_i|", "plot_ui_mag.png");
-    PlotTimeSeriesWithOpenCV(ts_ux_n,  "ux_n",   "plot_ux_n.png");
-    PlotTimeSeriesWithOpenCV(ts_uy_n,  "uy_n",   "plot_uy_n.png");
-    PlotTimeSeriesWithOpenCV(ts_un_mag,"|u_n|", "plot_un_mag.png");
-    PlotTimeSeriesWithOpenCV(ts_T_e,   "T_e",    "plot_T_e.png");
-    PlotTimeSeriesWithOpenCV(ts_T_i,   "T_i",    "plot_T_i.png");
-    PlotTimeSeriesWithOpenCV(ts_T_n,   "T_n",    "plot_T_n.png");
-    PlotTimeSeriesWithOpenCV(ts_rho_e, "rho_e",  "plot_rho_e.png");
-    PlotTimeSeriesWithOpenCV(ts_rho_i, "rho_i",  "plot_rho_i.png");
-    PlotTimeSeriesWithOpenCV(ts_rho_n, "rho_n",  "plot_rho_n.png");
-    PlotTimeSeriesWithOpenCV(ts_rho_q, "rho_q",  "plot_rho_q.png");
-    PlotTimeSeriesWithOpenCV(ts_Ex,    "Ex",     "plot_Ex.png");
-    PlotTimeSeriesWithOpenCV(ts_Ey,    "Ey",     "plot_Ey.png");
-    PlotTimeSeriesWithOpenCV(ts_E_mag, "|E|",    "plot_E_mag.png");
+    // 1) Create plots
+    // Create box to images
+    std::vector<std::pair<cv::Mat, std::string>> plots;
+    // Put all the images in the box
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_ux_e,  "ux_e"),   "plot_ux_e.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_uy_e,  "uy_e"),   "plot_uy_e.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_ue_mag,"|u_e|"), "plot_ue_mag.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_ux_i,  "ux_i"),   "plot_ux_i.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_uy_i,  "uy_i"),   "plot_uy_i.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_ui_mag,"|u_i|"), "plot_ui_mag.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_ux_n,  "ux_n"),   "plot_ux_n.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_uy_n,  "uy_n"),   "plot_uy_n.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_un_mag,"|u_n|"), "plot_un_mag.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_T_e,   "T_e"),    "plot_T_e.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_T_i,   "T_i"),    "plot_T_i.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_T_n,   "T_n"),    "plot_T_n.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_rho_e, "rho_e"),  "plot_rho_e.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_rho_i, "rho_i"),  "plot_rho_i.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_rho_n, "rho_n"),  "plot_rho_n.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_rho_q, "rho_q"),  "plot_rho_q.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_Ex,    "Ex"),     "plot_Ex.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_Ey,    "Ey"),     "plot_Ey.png"});
+    plots.push_back({PlotTimeSeriesWithOpenCV(ts_E_mag, "|E|"),    "plot_E_mag.png"});
+    //Plot it one time to save time
+    #pragma omp parallel for
+    for (size_t i = 0; i < plots.size(); ++i) {
+        const auto& [img, name] = plots[i];
+        if (!img.empty())
+            cv::imwrite("build/graphs/" + name, img);
+    }
 
     // 2) Release video writers
     video_writer_density.release();
@@ -366,27 +378,27 @@ void CloseVisualization() {
 // PlotTimeSeriesWithOpenCV
 //---------------------------------------------------------------------------
 
-void PlotTimeSeriesWithOpenCV(
+cv::Mat PlotTimeSeriesWithOpenCV(
     const std::vector<std::array<double,P>>& data,
-    const std::string& title,
-    const std::string& png_filename
+    const std::string& title
 ) {
-    if (data.empty()) return;
-    const size_t N = data.size();
+    if (data.empty()) return cv::Mat(); //if empty return
+    const int N = data.size(); //take the size of the data inside
 
-    // Find global min/max over all points
+    // Find global min/max over all points to plot and see data
     double vmin = data[0][0], vmax = data[0][0];
+    #pragma omp parallel for reduction(min:vmin) reduction(max:vmax)
     for (const auto& arr : data)
         for (double v : arr) {
             vmin = std::min(vmin, v);
             vmax = std::max(vmax, v);
         }
-    if (vmin == vmax) { vmin -= 1.0; vmax += 1.0; }
+    if (vmin == vmax) { vmin -= 1.0; vmax += 1.0; } // if constant value just add some space to avoid seeing line grafics
 
     // Create plotting canvas
-    const int W = 800, H = 600;
-    const int ml = 80, mr = 40, mt = 60, mb = 80;
-    cv::Mat img(H, W, CV_8UC3, cv::Scalar::all(255));
+    const int W = 800, H = 600; //image size
+    const int ml = 80, mr = 40, mt = 60, mb = 80; //additiona space for axis and labels
+    cv::Mat img(H, W, CV_8UC3, cv::Scalar::all(255)); //define empty image
 
     // Draw axes
     cv::Point origin(ml, H-mb), xend(W-mr, H-mb), yend(ml, mt);
@@ -395,58 +407,57 @@ void PlotTimeSeriesWithOpenCV(
     cv::putText(img, title, {ml, mt/2},
                 cv::FONT_HERSHEY_SIMPLEX, 0.8, {0,0,0}, 2);
 
-    const double pw = W - ml - mr, ph = H - mt - mb;
-    const double xs = pw / (N - 1), ys = ph / (vmax - vmin);
+    const double pw = W - ml - mr, ph = H - mt - mb; //total graph width and height
+    const double xs = pw / (N - 1), ys = ph / (vmax - vmin); //x and y steps
 
     // Color palette
-    std::vector<cv::Scalar> palette = {
+    std::array<cv::Scalar, P> palette;
+    std::vector<cv::Scalar> base_palette = {
         {255,0,0},{0,128,0},{0,0,255},{255,165,0},
         {128,0,128},{0,255,255},{255,0,255},{128,128,0},
         {0,128,128}
     };
+    for (int p = 0; p < P; ++p)
+        palette[p] = base_palette[p % base_palette.size()];
 
     // Plot each of the P curves
+    //#pragma omp parallel for
     for (int p = 0; p < P; ++p) {
-        cv::Scalar col = palette[p % palette.size()];
-        for (size_t k = 1; k < N; ++k) {
-            cv::Point p0(
-                int(ml + xs*(k-1)),
-                int(H-mb - ys*(data[k-1][p] - vmin))
-            );
-            cv::Point p1(
-                int(ml + xs*k),
-                int(H-mb - ys*(data[k][p]   - vmin))
-            );
-            cv::line(img, p0, p1, col);
+        for (int k = 1; k < N; ++k) {
+            //Point 0
+            const int x0 = int(ml + xs * (k - 1));
+            const int y0 = int(H - mb - ys * (data[k - 1][p] - vmin));
+            //Point 1
+            const int x1 = int(ml + xs * k);
+            const int y1 = int(H - mb - ys * (data[k][p] - vmin));
+            cv::line(img, {x0, y0}, {x1, y1}, palette[p], 1, cv::LINE_AA); //draw a line between point 0 and point 1
         }
     }
-
     // Legend
     const int lx = W - mr - 150, ly = mt + 10, lh = 20;
     for (int p = 0; p < P; ++p) {
         cv::rectangle(img,
             {lx, ly + p*lh}, {lx+15, ly + p*lh + 15},
             palette[p % palette.size()], cv::FILLED
-        );
+        ); //draw a small Rect to see the color of the curve
         cv::putText(img,
             "p" + std::to_string(p),
             {lx+20, ly + p*lh + 12},
             cv::FONT_HERSHEY_SIMPLEX, 0.5, {0,0,0}, 1
-        );
+        ); //Tell wich point is
     }
 
     // Axis labels
     cv::putText(img, "time",
         {(ml + W-mr)/2, H-mb + 40},
         cv::FONT_HERSHEY_SIMPLEX, 0.6, {0,0,0}, 1
-    );
+    ); //x axis
     cv::putText(img, title,
         {10, (mt + H-mb)/2},
         cv::FONT_HERSHEY_SIMPLEX, 0.6, {0,0,0}, 1
-    );
+    ); // y axis
 
-    // Save to disk
-    cv::imwrite(png_filename, img);
+    return img; //return image
 }
 
 
