@@ -1,3 +1,10 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+import re
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+from scipy.interpolate import griddata
 
 # Mappature
 bc_map = {0: "Periodic", 1: "BounceBack"}
