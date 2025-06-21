@@ -60,23 +60,6 @@ for _, config in configs.iterrows():
             plt.savefig(filename)
             plt.close()
 
-    # === Weak scalability ===
-    weak_df = config_df.copy()
-    weak_df["load_per_core"] = weak_df["Grid_Size"] / weak_df["Number_of_Cores"]
-    for load in sorted(weak_df["load_per_core"].unique()):
-        data = weak_df[weak_df["load_per_core"] == load]
-        if len(data["Number_of_Cores"].unique()) > 1:
-            plt.figure()
-            data = data.sort_values("Number_of_Cores")
-            plt.errorbar(data["Number_of_Cores"], data["Total_Computation_Time(ms)"],
-                         yerr=data["std"], fmt='o-', capsize=5)
-            plt.xlabel("Number of Cores")
-            plt.ylabel("Computation Time (ms)")
-            plt.title(f"Weak scalability - Load/Core={int(load)}\nBC: {label_bc}, Poisson: {label_poisson}")
-            plt.grid(True)
-            filename = f"{output_dir}/Weak scalability_{label_bc}_{label_poisson}_Load{int(load)}.png"
-            plt.savefig(filename)
-            plt.close()
 
     # === Grid size impact ===
     for core in config_df["Number_of_Cores"].unique():
