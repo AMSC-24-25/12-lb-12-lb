@@ -36,7 +36,7 @@ void StreamingPeriodic(std::vector<double>& f_e, std::vector<double>& f_i, std::
                        std::vector<double>& temp_e, std::vector<double>& temp_i, std::vector<double>& temp_n, 
                        const std::array<int, Q>& cx, const std::array<int, Q>& cy,
                        const int NX, const int NY) {
-    //#pragma omp parallel for collapse(3) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int x = 0; x < NX; ++x) {
         for (int y = 0; y < NY; ++y) {
             for (int i = 0; i < Q; ++i) {
@@ -118,7 +118,7 @@ void ThermalStreamingPeriodic(std::vector<double>& g_e, std::vector<double>& g_i
                               std::vector<double>& temp_e, std::vector<double>& temp_i, std::vector<double>& temp_n, 
                               const std::array<int,Q>& cx, const std::array<int,Q>& cy,
                               const int NX, const int NY) {
-    //#pragma omp parallel for collapse(3) schedule(static)
+    #pragma omp parallel for collapse(3) schedule(static)
     for (int x = 0; x < NX; ++x) {
         for (int y = 0; y < NY; ++y) {
             for (int i = 0; i < Q; ++i) {
